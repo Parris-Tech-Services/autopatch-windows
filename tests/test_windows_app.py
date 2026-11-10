@@ -133,3 +133,21 @@ class VersionTests(unittest.TestCase):
         scan = app.Scan("windows-ab12cd34", lambda cmd: types.SimpleNamespace(returncode=1, stdout="", stderr="x"))
         self.assertIn(app.BASE_VERSION, scan.state()["version"])
         self.assertIn('id="ver"', ui.PAGE)
+
+
+class FallbackHonestyTests(unittest.TestCase):
+    def states(self, raw):
+        import posture
+        return {c["id"]: c["state"] for c in posture.to_checks(raw)}
+
+    def test_weak_fallbacks_never_invent_a_failure(self):
+        st = self.states({"bitlocker_shell": 0, "tpm_pnp_found": False})
+        self.assertEqual(st["bitlocker_on"], "unknown")
+        self.assertEqual(st["tpm_present"], "unknown")
+
+    def test_authoritative_reads_still_pass_or_fail(self):
+        self.assertEqual(self.states({"bitlocker_protection": 0})["bitlocker_on"], "fail")
+        self.assertEqual(self.states({"tpm_present": False})["tpm_present"], "fail")
+        self.assertEqual(self.states({"bitlocker_shell": 1})["bitlocker_on"], "pass")
+        self.assertEqual(self.states({"tpm_pnp_found": True})["tpm_present"], "pass")
+        self.assertEqual(self.states({"secure_boot": False})["secure_boot"], "fail")

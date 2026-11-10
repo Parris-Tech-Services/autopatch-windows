@@ -19,8 +19,30 @@ def _fw(profiles):
 WIN10_LAST_BUILD = 19045  # Windows 10 22H2 is the last Windows 10 release; mainstream support ended 14 Oct 2025
 
 
+def _bitlocker(raw):
+    api, shell = raw.get("bitlocker_protection"), raw.get("bitlocker_shell")
+    if api is not None:
+        return ("pass" if api in (1, "On") else "fail"), "BitLocker reports protection %s" % api
+    if shell == 1:
+        return "pass", "Drive shows as protected"
+    if shell is not None:
+        return "unknown", "Drive property reads %s; cannot confirm without administrator rights" % shell
+    return "unknown", "could not be read"
+
+
+def _tpm(raw):
+    api = raw.get("tpm_present")
+    if api is not None:
+        return ("pass" if api else "fail"), "TPM present" if api else "No TPM reported"
+    if raw.get("tpm_pnp_found") is True:
+        return "pass", "TPM device found"
+    return "unknown", "Could not confirm a TPM without administrator rights"
+
+
 def to_checks(raw):
     raw = raw or {}
+    bl_state, bl_detail = _bitlocker(raw)
+    tpm_state, tpm_detail = _tpm(raw)
     age = raw.get("defender_signature_age_days")
     rows = [
         ("os_supported", "high", _state(raw.get("os_build"), lambda b: b > WIN10_LAST_BUILD), "Windows 10 no longer gets regular security updates"),
@@ -28,12 +50,12 @@ def to_checks(raw):
         ("defender_realtime", "high", _state(raw.get("defender_realtime"), bool), "Real-time protection on"),
         ("defender_signatures_fresh", "medium", _state(age, lambda a: a <= MAX_SIGNATURE_AGE_DAYS), f"Signature age {age} days"),
         ("firewall_on", "high", _state(_fw(raw.get("firewall_profiles_enabled")), bool), "All firewall profiles enabled"),
-        ("bitlocker_on", "medium", _state(raw.get("bitlocker_protection"), lambda v: v in (1, "On")), "System drive encrypted"),
-        ("secure_boot", "medium", _state(raw.get("secure_boot"), bool), "Secure Boot enabled"),
-        ("tpm_present", "low", _state(raw.get("tpm_present"), bool), "TPM present"),
+        ("bitlocker_on", "medium", bl_state, bl_detail),
+        ("secure_boot", "medium", _state(raw.get("secure_boot"), bool), "Secure Boot is on" if raw.get("secure_boot") else "Secure Boot reads as off"),
+        ("tpm_present", "low", tpm_state, tpm_detail),
         ("smbv1_off", "high", _state(raw.get("smbv1_enabled"), lambda v: not v), "SMBv1 disabled"),
         ("uac_on", "medium", _state(raw.get("uac_enabled"), lambda v: v == 1), "User Account Control enabled"),
         ("rdp_closed", "medium", _state(raw.get("rdp_denied"), lambda v: v == 1), "Remote Desktop connections denied"),
         ("apps_current", "low", _state(raw.get("winget_outdated"), lambda n: n == 0), f"{raw.get('winget_outdated')} apps outdated (winget)"),
     ]
-    return [{"id": i, "state": s, "severity": sev, "detail": d if s != "unknown" else "could not be read"} for i, sev, s, d in rows]
+    return [{"id": i, "state": s, "severity": sev, "detail": d} for i, sev, s, d in rows]

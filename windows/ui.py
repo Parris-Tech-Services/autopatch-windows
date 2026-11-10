@@ -15,7 +15,7 @@ TITLES = {
     "rdp_closed": ("Remote Desktop closed", "Turn off Remote Desktop unless you use it."),
     "apps_current": ("Apps up to date", "Run winget upgrade --all, or update your apps."),
 }
-UNKNOWN_HINT = "Could not read this. Try closing the app and running it again with Run as administrator."
+UNKNOWN_HINT = "Not verified, so it lowers the score until confirmed. Close the app and run it again with Run as administrator to check it."
 
 
 def view(status, score, inventory, gate):
@@ -70,7 +70,7 @@ function render(v){
   for(const [s,t] of groups){const items=v.checks.filter(c=>c.state===s);if(!items.length)continue;
     const card=el("div","card");card.append(el("h2","",t+" ("+items.length+")"));
     for(const c of items){const r=el("div","row");r.append(el("div","dot "+s,s==="pass"?"✓":s==="fail"?"✕":"?"));
-      const b=el("div");b.append(el("div","",c.title));if(s!=="pass"&&c.fix)b.append(el("div","fix",c.fix));r.append(b);card.append(r)}
+      const b=el("div");b.append(el("div","",c.title));if(s!=="pass"){if(c.detail)b.append(el("div","fix","What I read: "+c.detail));if(c.fix)b.append(el("div","fix",c.fix))}r.append(b);card.append(r)}
     out.append(card)}
   const g=el("div","card");g.append(el("h2","","Automatic patching"));
   g.append(el("span","pill",v.gate.decision==="ALLOW"?"Safe to run now":"Not switched on yet"));
