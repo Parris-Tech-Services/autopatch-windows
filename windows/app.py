@@ -36,7 +36,7 @@ def resource(frozen_name, source_path):
 AGENT = resource("devices/agent-windows.ps1", ROOT / "devices" / "agent-windows.ps1")
 POSTURE = resource("posture.ps1", Path(__file__).resolve().parent / "posture.ps1")
 MIN_FREE_GB = 10.0
-BASE_VERSION = "0.3"
+BASE_VERSION = "0.3.2"
 try:
     from _version import BUILD  # written by the release workflow: "<short commit> <UTC time>"
 except ImportError:
@@ -74,7 +74,8 @@ def build_status(inv, raw_posture, gate, device_id, when):
         "collected_utc": when,
         "os": {"name": str(inv.get("os") or ""), "patch_level": str(inv.get("patch_level") or "")},
         "updates": {"pending_security": inv.get("security_updates_pending") if isinstance(inv.get("security_updates_pending"), int) else None,
-                    "reboot_required": bool(inv.get("reboot_required"))},
+                    "pending_total": inv.get("updates_pending_total") if isinstance(inv.get("updates_pending_total"), int) else None,
+                    "reboot_required": inv.get("reboot_required") if isinstance(inv.get("reboot_required"), bool) else None},
         "checks": posture.to_checks(raw_posture),
         "findings": [],
         "gate": {"decision": gate["decision"], "reasons": gate["reasons"]},
@@ -94,7 +95,7 @@ def assess(inv, procs, extra=None):
         "device": inv.get("hostname"), "os": "windows", "enrolled": False,
         "mechanism": "windows_update", "update_kind": "security",
         "precheck_ok": float(inv.get("disk_free_gb") or 0) >= MIN_FREE_GB,
-        "running_processes": procs, "requires_reboot": bool(inv.get("reboot_required")),
+        "running_processes": procs, "requires_reboot": inv.get("reboot_required") is not False,  # unknown counts as needing one
         "in_maintenance_window": False, "backup_taken": False, "rollback_plan": "",
     }
     req.update(extra or {})

@@ -19,9 +19,10 @@ $uac = Try-Get { (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVers
 $rdp = Try-Get { (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server").fDenyTSConnections }
 $wg  = $null
 if (Get-Command winget -ErrorAction SilentlyContinue) {
-  $lines = winget upgrade --include-unknown 2>$null | Out-String -Stream
+  $lines = winget upgrade --include-unknown --accept-source-agreements --disable-interactivity 2>$null | Out-String -Stream
   $i = ($lines | Select-String -Pattern '^-{5,}' | Select-Object -First 1).LineNumber
-  if ($i) { $wg = @($lines | Select-Object -Skip $i | Where-Object { $_.Trim() -and $_ -notmatch 'upgrades available' }).Count }
+  # Rows run from the separator to the first blank or "N upgrades available" line (any language); later sections are not counted.
+  if ($i) { $wg = 0; foreach ($l in ($lines | Select-Object -Skip $i)) { if (-not $l.Trim() -or $l -match '^\d+ ') { break }; $wg++ } }
 }
 [ordered]@{
   defender_enabled = if ($mp) { [bool]$mp.AntivirusEnabled } else { $null }
