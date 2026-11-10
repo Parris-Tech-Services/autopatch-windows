@@ -8,7 +8,7 @@ concurrency:
   # Publishing runs (main, manual) share one queue so only one touches the release at a time.
   # Each pull request gets its own queue, so a PR run can never displace the run that publishes.
   group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'release' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: write
 jobs:
