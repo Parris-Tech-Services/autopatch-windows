@@ -2,6 +2,7 @@ name: Build and publish Windows exe
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 concurrency:
   group: release
@@ -9,7 +10,22 @@ concurrency:
 permissions:
   contents: write
 jobs:
+  fedora:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Tools
+        run: dnf -y install python3 git findutils util-linux procps-ng
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Build the single-file app
+        run: python3 tools/build_pyz.py dist/autopatch-linux.pyz
+      - name: Smoke test on a real Fedora system (real dnf)
+        run: python3 tests/smoke_linux.py dist/autopatch-linux.pyz
+        timeout-minutes: 20
   release:
+    needs: fedora
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +35,10 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Stamp the version
         shell: bash
-        run: echo "BUILD = \"${GITHUB_SHA::7} $(date -u +%Y-%m-%d\ %H:%M)Z\"" > windows/_version.py
+        run: |
+          echo "BUILD = \"${GITHUB_SHA::7} $(date -u +%Y-%m-%d\ %H:%M)Z\"" > windows/_version.py
+          cp windows/_version.py linux/_version.py
+          python tools/build_pyz.py dist/autopatch-linux.pyz
       - name: Build exe
         run: |
           python -m pip install pyinstaller==6.11.1
@@ -34,9 +53,10 @@ jobs:
         timeout-minutes: 8
         continue-on-error: true
       - name: Publish as the latest release
+        if: github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --cleanup-tag --yes || true
-          gh release create latest dist/autopatch-windows.exe --title "AutoPatch for Windows (latest)" --notes "Read-only. Unsigned: Windows SmartScreen will warn; choose More info, then Run anyway. Built from commit ${{ github.sha }}."
+          gh release create latest dist/autopatch-windows.exe dist/autopatch-linux.pyz --title "AutoPatch (latest): Windows exe and Fedora/Linux app" --notes "Read-only. Windows: autopatch-windows.exe is unsigned, so SmartScreen will warn; choose More info, then Run anyway. Fedora/Linux: python3 autopatch-linux.pyz. Built from commit ${{ github.sha }}."

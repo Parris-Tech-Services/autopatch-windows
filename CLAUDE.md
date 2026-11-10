@@ -24,6 +24,8 @@ Today the app only LOOKS and DECIDES. It installs nothing and changes nothing. W
 - `windows/posture.ps1`: read-only probe, prints one JSON object. Anything it cannot read is null.
 - `windows/posture.py`: maps that JSON to checks (`id`, `state`, `severity`, `detail`).
 - `devices/agent-windows.ps1`: inventory (OS, patch level, pending security updates via the Windows Update COM API, reboot flag, disk). This is the slow step (1 to 3 minutes).
+- `linux/probe.py`, `linux/autopatch_linux.py`: the Fedora/Linux app (same page, same shared status). Packaged as one file by `tools/build_pyz.py` (zipapp) and attached to the same `latest` release as `autopatch-linux.pyz`. CI runs it on a real Fedora container (`tests/smoke_linux.py`, real dnf) before anything is published.
+- `server.py`: the loopback web server shared by both apps (`windows/ui.py` is the shared page).
 - `device_status.py`: the shared status contract (strict field allowlist, `validate`, `score`, `verify_update`). Other apps depend on it; change it only deliberately.
 - `os_update_gate.py`: decision-only update gate.
 - `tests/`: `python -m unittest discover -s tests`. `tests/smoke_exe.py` runs the BUILT exe end to end on real Windows (CI only).

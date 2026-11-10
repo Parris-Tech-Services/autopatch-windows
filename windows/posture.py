@@ -39,13 +39,26 @@ def _tpm(raw):
     return "unknown", "Could not confirm a TPM without administrator rights"
 
 
+def _os_supported(raw):
+    """Only Windows 10 on a PC (product type 1) is judged here. Servers have their own, longer lifecycles."""
+    build, ptype = raw.get("os_build"), raw.get("os_product_type")
+    if build is None:
+        return "unknown", "could not read the Windows build"
+    if ptype in (2, 3):
+        return "unknown", "Windows Server: its support dates are not checked here"
+    if build <= WIN10_LAST_BUILD:
+        return "fail", "Windows 10 no longer gets regular security updates"
+    return "pass", "Windows version is still supported"
+
+
 def to_checks(raw):
     raw = raw or {}
     bl_state, bl_detail = _bitlocker(raw)
     tpm_state, tpm_detail = _tpm(raw)
     age = raw.get("defender_signature_age_days")
+    os_state, os_detail = _os_supported(raw)
     rows = [
-        ("os_supported", "high", _state(raw.get("os_build"), lambda b: b > WIN10_LAST_BUILD), "Windows 10 no longer gets regular security updates"),
+        ("os_supported", "high", os_state, os_detail),
         ("defender_on", "high", _state(raw.get("defender_enabled"), bool), "Microsoft Defender antivirus enabled"),
         ("defender_realtime", "high", _state(raw.get("defender_realtime"), bool), "Real-time protection on"),
         ("defender_signatures_fresh", "medium", _state(age, lambda a: a <= MAX_SIGNATURE_AGE_DAYS), f"Signature age {age} days"),

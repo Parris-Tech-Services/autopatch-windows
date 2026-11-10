@@ -101,6 +101,12 @@ def assess(inv, procs, extra=None):
     return {"inventory": inv, "gate": os_update_gate.check(req)}
 
 
+import server  # noqa: E402
+
+log = server.make_log("autopatch-windows.log")
+LOG = log.path
+
+
 def is_admin():
     try:
         import ctypes
@@ -109,11 +115,7 @@ def is_admin():
         return False
 
 
-def same_origin(headers, port):
-    """Only the page this server itself serves may ask for elevation, never another website."""
-    host_ok = headers.get("Host") in ("127.0.0.1:%d" % port, "localhost:%d" % port)
-    site = headers.get("Sec-Fetch-Site")
-    return host_ok and site in (None, "same-origin")
+same_origin = server.same_origin
 
 
 def elevation_command(frozen, exe, script, port):
@@ -140,7 +142,7 @@ class Scan:
         self.warnings = []
 
     def state(self):
-        return {"version": VERSION, "admin": is_admin(), "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
+        return {"product": "AutoPatch for Windows", "version": VERSION, "admin": is_admin(), "can_elevate": True, "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
                           for i, n in enumerate(self.STEPS)], "error": self.error, "view": self.view,
                 "warnings": self.warnings}
 
@@ -172,45 +174,14 @@ class Scan:
 
 
 def serve(scan, port):
-    class H(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == "/api/state":
-                body, kind = json.dumps(scan.state()).encode(), "application/json"
-            elif self.path == "/status.json":
-                body, kind = json.dumps(getattr(scan, "status", {})).encode(), "application/json"
-            else:
-                body, kind = ui.PAGE.encode(), "text/html; charset=utf-8"
-            self.send_response(200)
-            self.send_header("Content-Type", kind)
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self):
-            if self.path != "/api/elevate" or not same_origin(self.headers, port):
-                self.send_response(403)
-                self.end_headers()
-                return
-            try:
-                ok = launch_elevated(port)
-            except (AttributeError, OSError):
-                ok = False
-            body = json.dumps({"started": ok}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *a):
-            pass
-    server = HTTPServer(("127.0.0.1", port), H)
-    return server
+    return server.serve(scan, port, ui.page("Windows Update"), launch_elevated)
 
 
 def main(argv=None):
     import hashlib
     import socket
     import threading
+    import time
     import webbrowser
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--device-id", default=None, help="default: windows-<hash of this PC name>")
@@ -218,19 +189,36 @@ def main(argv=None):
     a = p.parse_args(argv)
     device_id = a.device_id or "windows-" + hashlib.sha1(socket.gethostname().encode()).hexdigest()[:8]
     scan = Scan(device_id)
-    server = serve(scan, a.port)
+    log("start version=%s port=%d admin=%s device=%s" % (VERSION, a.port, is_admin(), device_id))
+    try:
+        server = serve(scan, a.port)
+    except OSError as exc:
+        log("cannot listen on port %d: %s" % (a.port, exc))
+        print("Could not start: port %d is already in use. Close the other AutoPatch window and try again." % a.port)
+        input("Press Enter to close.")
+        return
     url = "http://127.0.0.1:%d" % a.port
     print("AutoPatch for Windows  version %s" % VERSION)
     print("--------------------------------------------")
     print("Opening %s in your browser. The scan runs there and can take a minute or two." % url)
     print("It only reads information and changes nothing. Close this window to stop.")
+    # The server must be answering before anything else can go wrong, so it runs in its own thread
+    # and neither the scan nor a slow browser launch can keep it from starting.
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     threading.Thread(target=scan.work, daemon=True).start()
-    webbrowser.open(url)
+
+    def open_browser():
+        try:
+            webbrowser.open(url)
+        except Exception as exc:  # a browser that will not open must not stop the app
+            log("browser did not open: %s" % exc)
+    threading.Thread(target=open_browser, daemon=True).start()
+    log("listening on %s" % url)
     try:
-        server.serve_forever()
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
         pass
-
 
 if __name__ == "__main__":
     main()

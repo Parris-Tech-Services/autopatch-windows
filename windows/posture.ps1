@@ -13,6 +13,7 @@ $tpm = Try-Get { (Get-Tpm).TpmPresent }
 $tpm_pnp = $null
 if ($null -eq $tpm) { $tpm_pnp = Try-Get { [bool](Get-PnpDevice -Class SecurityDevices -PresentOnly | Where-Object { $_.FriendlyName -like "*Trusted Platform Module*" }) } }
 $build = Try-Get { [int](Get-CimInstance Win32_OperatingSystem).BuildNumber }
+$ptype = Try-Get { [int](Get-CimInstance Win32_OperatingSystem).ProductType }
 $smb = Try-Get { (Get-SmbServerConfiguration).EnableSMB1Protocol }
 $uac = Try-Get { (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System").EnableLUA }
 $rdp = Try-Get { (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server").fDenyTSConnections }
@@ -36,5 +37,6 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
   uac_enabled = $uac
   rdp_denied = $rdp
   os_build = $build
+  os_product_type = $ptype
   winget_outdated = $wg
 } | ConvertTo-Json -Compress
