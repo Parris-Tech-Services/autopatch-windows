@@ -32,6 +32,11 @@ def settings(system="linux"):
               "agent_version":"test"}
     return policy,status,pkg,old,new
 
+def approved(system):
+    return {"device_id":"owned-disposable-01", "device_class":system,
+            "hostname":"disposable-host", "status":"enrolled_readonly",
+            "permissions":["inventory_read"], "auto_patch":False, "remote_control":False}
+
 def run_case(system, success=True):
     pol, st, pkg, old, new = settings(system)
     events = []
@@ -45,7 +50,7 @@ def run_case(system, success=True):
         if cmd[0] == "dnf" or (cmd[0]=="winget" and cmd[1]=="upgrade"):
             return 0, "transaction"
         return 127, ""
-    return safe_patch.apply(pol, st, pkg, apply_change=True, system=system,
+    return safe_patch.apply(pol, st, pkg, approved_inventory=approved(system), apply_change=True, system=system,
                             hostname="disposable-host",now=NOW,
                             backup_exists=lambda _:True,free_gb=20,
                             command_runner=mock_run),events
@@ -70,25 +75,31 @@ class PatchCycleTests(unittest.TestCase):
         pol, st, pkg, old, new = settings()
         def fake(cmd):
             return (0,"normal") if cmd[0]=="ps" else (0,old)
-        result = safe_patch.apply(pol, st, pkg, system="linux",hostname="disposable-host",
+        result = safe_patch.apply(pol, st, pkg, approved_inventory=approved("linux"), system="linux",hostname="disposable-host",
                                   now=NOW, backup_exists=lambda _:True,free_gb=20,
                                   command_runner=fake)
         self.assertEqual(result["status"],"READY_DRY_RUN")
+    def test_denied_without_approved_receipt(self):
+        pol, st, pkg, _, _ = settings()
+        dec = safe_patch.gate(pol,st,pkg,system="linux",hostname="disposable-host",
+                              now=NOW, backup_exists=lambda _:True, free_gb=20)
+        self.assertEqual(dec["decision"],"DENY")
+
     def test_denied_on_work_device(self):
         pol, st, pkg, _, _ = settings()
         pol["employer_managed"] = True
-        decision = safe_patch.gate(pol,st,pkg,system="linux",hostname="disposable-host",
+        decision = safe_patch.gate(pol,st,pkg,approved_inventory=approved("linux"),system="linux",hostname="disposable-host",
                                   now=NOW,backup_exists=lambda _:True,free_gb=20)
         self.assertEqual(decision["decision"],"DENY")
     def test_denied_outside_window(self):
         pol, st, pkg, _, _ = settings()
-        decision = safe_patch.gate(pol,st,pkg,system="linux",hostname="disposable-host",
+        decision = safe_patch.gate(pol,st,pkg,approved_inventory=approved("linux"),system="linux",hostname="disposable-host",
                                   now=NOW+timedelta(hours=3),
                                   backup_exists=lambda _:True,free_gb=20)
         self.assertEqual(decision["decision"],"DENY")
     def test_denied_missing_backup_and_device_mismatch(self):
         pol, st, pkg, _, _ = settings()
-        a = safe_patch.gate(pol,st,pkg,system="linux",hostname="wrong",now=NOW,
+        a = safe_patch.gate(pol,st,pkg,approved_inventory=approved("linux"),system="linux",hostname="wrong",now=NOW,
                             backup_exists=lambda _:False,free_gb=20)
         self.assertIn("machine identity mismatch",a["reasons"])
         self.assertIn("backup evidence missing",a["reasons"])
@@ -96,18 +107,18 @@ class PatchCycleTests(unittest.TestCase):
         pol, st, pkg, _, _ = settings()
         for bad in ("kernel", "fwupd", "grub2", "systemd"):
             with self.subTest(bad=bad):
-                d = safe_patch.gate(pol,st,bad,system="linux",hostname="disposable-host",
+                d = safe_patch.gate(pol,st,bad,approved_inventory=approved("linux"),system="linux",hostname="disposable-host",
                                     now=NOW,backup_exists=lambda _:True,free_gb=20)
                 self.assertEqual(d["decision"],"DENY")
     def test_denied_stale_scan(self):
         pol, st, pkg, _, _ = settings()
         st["collected_utc"]=(NOW-timedelta(days=1)).isoformat()
-        d=safe_patch.gate(pol,st,pkg,system="linux",hostname="disposable-host",
+        d=safe_patch.gate(pol,st,pkg,approved_inventory=approved("linux"),system="linux",hostname="disposable-host",
                            now=NOW,backup_exists=lambda _:True,free_gb=20)
         self.assertEqual(d["decision"],"DENY")
     def test_active_process_stops_patch(self):
         pol, st, pkg, _, _ = settings()
-        r=safe_patch.apply(pol,st,pkg,system="linux",hostname="disposable-host",now=NOW,
+        r=safe_patch.apply(pol,st,pkg,approved_inventory=approved("linux"),system="linux",hostname="disposable-host",now=NOW,
                            backup_exists=lambda _:True,free_gb=20,
                            command_runner=lambda cmd:(0,"DeepSeek running"),apply_change=True)
         self.assertEqual(r["status"],"BLOCKED_ACTIVE_OR_UNKNOWN_PROCESSES")
