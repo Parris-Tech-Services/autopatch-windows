@@ -58,7 +58,7 @@ h2{font-size:1rem;margin:0 0 .6rem}.row{display:flex;gap:.7rem;padding:.55rem 0;
 footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:1.5rem}ul{margin:.4rem 0 0;padding-left:1.2rem}
 </style></head><body><main>
 <h1>AutoPatch</h1><p class="sub" id="sub">Checking this PC. Nothing is changed.</p>
-<div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><p class="fix">The Windows Update check can take a minute or two. This page updates by itself.</p></div>
+<div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><div id="live" class="fix"></div><p class="fix">The Windows Update check can take a minute or two. This page updates by itself.</p></div>
 <div id="out" hidden></div>
 <footer><div id="ver"></div>Read-only. Nothing is installed or changed. {{PATCHER}} does the patching. This page only works on this PC.</footer>
 </main><script>
@@ -93,6 +93,10 @@ function render(v){
 async function poll(){
   try{const s=await (await fetch("/api/state")).json();
     window.__admin=!!s.admin;window.__can=s.can_elevate;if(s.admin)$("sub").textContent="Running with elevated rights. Reading only.";if(s.version)$("ver").textContent=(s.product||"AutoPatch")+", version "+s.version;const ul=$("steps");ul.textContent="";for(const st of s.steps){ul.append(el("li",st.state,(st.state==="done"?"✓ ":st.state==="on"?"… ":"")+st.name))}
+    const live=$("live");live.textContent="";
+    if(s.current){live.append(el("div","",("Now running: "+s.current.label+" ("+s.current.seconds+" s)")),el("code","fix",s.current.cmd))}
+    for(const h of (s.history||[]).slice().reverse()){live.append(el("div","fix",(h.rc===0||h.rc===100?"✓ ":h.rc===124?"⏱ timed out: ":h.rc===127?"– not installed: ":"· ")+h.label+" ("+h.seconds+" s)"))}
+    if(s.log_file&&(s.current||(s.history||[]).length))live.append(el("div","fix","Log file: "+s.log_file))
     if(s.error){$("scan").textContent="";$("scan").append(el("h2","","Something went wrong"),el("p","",s.error),el("p","fix","Close this window and run it again. If it keeps happening, tell Claude the message above."));return}
     if(s.view){render(s.view);return}
   }catch(e){}
