@@ -87,7 +87,7 @@ def gate(policy, status, package, *, system=None, hostname=None, now=None,
          "insufficient free disk")
     window = policy.get("window") or {}
     try:
-        local = now.astimezone(ZoneInfo(window["timezone"]))
+        local = now.astimezone(timezone.utc if window["timezone"] == "UTC" else ZoneInfo(window["timezone"]))
         start = window["start"]
         end = window["end"]
         need(re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", start) is not None,
