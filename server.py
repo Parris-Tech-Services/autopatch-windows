@@ -8,7 +8,8 @@ from __future__ import annotations
 import json
 import tempfile
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
@@ -54,11 +55,18 @@ def serve(scan, port, page_html, on_elevate=None):
                 self.send_response(403)
                 self.end_headers()
                 return
-            try:
-                ok = bool(on_elevate(port))
-            except (AttributeError, OSError):
-                ok = False
-            body = json.dumps({"started": ok}).encode()
+            # Windows holds this call open until the person answers the permission prompt, so it must not block the
+            # server (the page keeps polling meanwhile). The outcome is published on scan.elevation.
+            scan.elevation = "asked"
+
+            def ask():
+                try:
+                    ok = bool(on_elevate(port))
+                except (AttributeError, OSError):
+                    ok = False
+                scan.elevation = "started" if ok else "declined"
+            threading.Thread(target=ask, daemon=True).start()
+            body = json.dumps({"asked": True}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -66,4 +74,6 @@ def serve(scan, port, page_html, on_elevate=None):
 
         def log_message(self, *a):
             pass
-    return HTTPServer(("127.0.0.1", port), H)
+    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    srv.daemon_threads = True
+    return srv

@@ -52,7 +52,7 @@ jobs:
         timeout-minutes: 15
       - name: Elevation test (the page's admin button, on a runner that is an administrator)
         run: python tests/smoke_exe.py dist/autopatch-windows.exe elevation
-        timeout-minutes: 8
+        timeout-minutes: 15
         continue-on-error: true
       - name: Publish as the latest release
         if: github.event_name != 'pull_request'

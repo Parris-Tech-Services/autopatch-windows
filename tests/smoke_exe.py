@@ -66,12 +66,18 @@ try:
 
     if CHECK_ELEVATION:
         req = urllib.request.Request("http://127.0.0.1:8765/api/elevate", method="POST")
-        with urllib.request.urlopen(req, timeout=60) as r:
-            started = json.loads(r.read())["started"]
-        print("elevation request accepted by Windows:", started)
-        assert started, "ShellExecute runas did not start the elevated instance"
+        with urllib.request.urlopen(req, timeout=30) as r:
+            assert json.loads(r.read())["asked"] is True
+        t0 = time.time()
+        while time.time() - t0 < 360:  # Windows can take minutes to start the elevated copy
+            elevation = json.loads(get(8765, "/api/state")[1]).get("elevation")
+            if elevation in ("started", "declined"):
+                break
+            time.sleep(3)
+        print("elevation outcome:", elevation, "after", round(time.time() - t0), "s")
+        assert elevation == "started", "Windows did not start the elevated instance: %s" % elevation
         try:
-            st2 = wait_state(8766, 120)
+            st2 = wait_state(8766, 300)
         except SystemExit:
             diag()
             raise

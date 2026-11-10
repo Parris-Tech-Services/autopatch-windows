@@ -82,8 +82,13 @@ function render(v){
     const a=el("div","card");a.append(el("h2","","Check the items it could not read"));
     a.append(el("p","fix","Some checks need administrator rights. Windows will ask you to approve. The app still only reads and changes nothing."));
     const b=el("button","btn","Re-check with administrator rights");
-    b.onclick=async()=>{b.disabled=true;try{const r=await (await fetch("/api/elevate",{method:"POST"})).json();
-      b.textContent=r.started?"Approved: the new results open in a new browser tab":"Not approved or not available. You can also right-click the exe and choose Run as administrator."}catch(e){b.textContent="Could not start. Right-click the exe and choose Run as administrator."}};
+    b.onclick=async()=>{b.disabled=true;b.textContent="Waiting for you to answer the Windows permission prompt...";
+      try{await fetch("/api/elevate",{method:"POST"});
+        for(let i=0;i<180;i++){await new Promise(r=>setTimeout(r,1000));const s=await (await fetch("/api/state")).json();
+          if(s.elevation==="started"){b.textContent="Approved: the new results open in a new browser tab";return}
+          if(s.elevation==="declined"){b.textContent="Not approved, so nothing changed. You can also right-click the exe and choose Run as administrator.";return}}
+        b.textContent="Still waiting. Check for a Windows permission prompt behind other windows."
+      }catch(e){b.textContent="Could not start. Right-click the exe and choose Run as administrator."}};
     a.append(b);out.append(a)}
   const g=el("div","card");g.append(el("h2","","Automatic patching"));
   g.append(el("span","pill",v.gate.decision==="ALLOW"?"Safe to run now":"Not switched on yet"));
