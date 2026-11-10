@@ -34,6 +34,18 @@ def wait_state(port, limit, want_done=True):
     raise SystemExit("TIMEOUT waiting for scan on port %d; last state: %s" % (port, json.dumps(last)[:500]))
 
 
+def diag():
+    """What is actually running and listening, and what the app itself logged."""
+    import os
+    import tempfile
+    for cmd in (["tasklist", "/FI", "IMAGENAME eq autopatch-windows.exe"], ["netstat", "-ano"]):
+        out = subprocess.run(cmd, capture_output=True, text=True).stdout
+        lines = [l for l in out.splitlines() if "autopatch" in l.lower() or ":876" in l]
+        print("DIAG", cmd[0], "->", lines or "nothing relevant")
+    log = os.path.join(tempfile.gettempdir(), "autopatch-windows.log")
+    print("DIAG app log:", open(log, encoding="utf-8").read() if os.path.exists(log) else "no log file")
+
+
 proc = subprocess.Popen([EXE], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 try:
     st = wait_state(8765, 600)
@@ -58,7 +70,11 @@ try:
             started = json.loads(r.read())["started"]
         print("elevation request accepted by Windows:", started)
         assert started, "ShellExecute runas did not start the elevated instance"
-        st2 = wait_state(8766, 600)
+        try:
+            st2 = wait_state(8766, 120)
+        except SystemExit:
+            diag()
+            raise
         assert not st2.get("error"), st2.get("error")
         print("ELEVATED instance: admin =", st2["admin"], "| score:", st2["view"]["score"])
         for c in st2["view"]["checks"]:

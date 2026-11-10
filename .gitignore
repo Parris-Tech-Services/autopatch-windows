@@ -1,6 +1,6 @@
-__pycache__/
 *.pyc
-dist/
-build/
 *.spec
+__pycache__/
 _version.py
+build/
+dist/
