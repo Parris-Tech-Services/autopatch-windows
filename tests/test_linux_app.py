@@ -166,3 +166,11 @@ class OfflineFirstTests(unittest.TestCase):
         raw = probe.collect(runner(FEDORA), read, free_gb=50)
         detail = {c["id"]: c["detail"] for c in probe.to_checks(raw)}["security_updates"]
         self.assertIn("package cache", detail)
+class SharedPageWordingTests(unittest.TestCase):
+    def test_linux_page_never_says_windows(self):
+        import ui
+        page = ui.page("dnf")
+        self.assertNotIn("Windows Update", page)
+        self.assertNotIn('["Windows",v', page)
+        self.assertIn("dnf does the patching", page)
+        self.assertNotIn("{{PATCHER}}", page)

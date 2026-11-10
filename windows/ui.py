@@ -32,7 +32,7 @@ def view(status, score, inventory, gate, titles=None, unknown_hint=None):
                        "fix": (unknown_hint or UNKNOWN_HINT) if c["state"] == "unknown" else fix})
     pending = status["updates"].get("pending_security")
     return {
-        "host": inventory.get("hostname") or "this PC", "os": inventory.get("os") or "Windows",
+        "host": inventory.get("hostname") or "this PC", "os": inventory.get("os") or "this system",
         "patch": inventory.get("patch_level") or "unknown", "pending": pending,
         "reboot": status["updates"].get("reboot_required"), "score": score, "checks": checks,
         "gate": {"decision": gate["decision"], "reasons": gate["reasons"]},
@@ -57,10 +57,10 @@ h2{font-size:1rem;margin:0 0 .6rem}.row{display:flex;gap:.7rem;padding:.55rem 0;
 .pill{display:inline-block;padding:.15rem .6rem;border-radius:99px;font-size:.85rem;font-weight:600;background:var(--line)}
 footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:1.5rem}ul{margin:.4rem 0 0;padding-left:1.2rem}
 </style></head><body><main>
-<h1>AutoPatch</h1><p class="sub" id="sub">Checking this PC. Nothing is changed.</p>
-<div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><div id="live" class="fix"></div><p class="fix">The Windows Update check can take a minute or two. This page updates by itself.</p></div>
+<h1>AutoPatch</h1><p class="sub" id="sub">Checking this computer. Nothing is changed.</p>
+<div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><div id="live" class="fix"></div><p class="fix">The update check can take a minute or two. This page updates by itself.</p></div>
 <div id="out" hidden></div>
-<footer><div id="ver"></div>Read-only. Nothing is installed or changed. {{PATCHER}} does the patching. This page only works on this PC.</footer>
+<footer><div id="ver"></div>Read-only. Nothing is installed or changed. {{PATCHER}} does the patching. This page only works on this computer.</footer>
 </main><script>
 const $=id=>document.getElementById(id);
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
@@ -69,7 +69,7 @@ function render(v){
   const col=v.score==null?"var(--unk)":v.score>=80?"var(--ok)":v.score>=50?"var(--warn)":"var(--bad)";
   const hero=el("div","card hero"),ring=el("div","ring",v.score==null?"?":String(v.score));ring.style.borderColor=col;
   const facts=el("div","facts");
-  for(const [a,b] of [["Computer",v.host],["Windows",v.os.replace("Microsoft ","").replace(/ 10\.0\.\d+/,"")],["Security updates waiting",v.pending==null?"Could not read":String(v.pending)],["Restart needed",v.reboot?"Yes":"No"]]){
+  for(const [a,b] of [["Computer",v.host],["System",v.os.replace("Microsoft ","").replace(/ 10\.0\.\d+/,"")],["Security updates waiting",v.pending==null?"Could not read":String(v.pending)],["Restart needed",v.reboot?"Yes":"No"]]){
     const f=el("div","fact");f.append(el("b","",b),el("span","",a));facts.append(f)}
   hero.append(ring,facts);out.append(hero);
   const groups=[["fail","Needs attention"],["unknown","Could not read"],["pass","Looks good"]];
