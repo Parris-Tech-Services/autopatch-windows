@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import device_status  # noqa: E402
 import os_update_gate  # noqa: E402
 import posture  # noqa: E402
+import ui  # noqa: E402
 
 
 
@@ -38,7 +39,7 @@ MIN_FREE_GB = 10.0
 
 
 def _run(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=False)
 
 
 def collect_inventory(device_id, run=_run):
@@ -94,57 +95,92 @@ def assess(inv, procs, extra=None):
     return {"inventory": inv, "gate": os_update_gate.check(req)}
 
 
-def checks_html(result):
-    cs = (result.get("status") or {}).get("checks", [])
-    return "".join("<li>%s: <b>%s</b> (%s)</li>" % (html.escape(c["id"]), html.escape(c["state"]), html.escape(c["detail"])) for c in cs)
+class Scan:
+    """Runs the read-only scan in a background thread so the page can open immediately and show progress."""
+
+    STEPS = ["Reading Windows Update status", "Checking security settings", "Checking whether your other work is running", "Working out your score"]
+
+    def __init__(self, device_id, run=_run):
+        self.device_id, self.run = device_id, run
+        self.step, self.error, self.view = 0, None, None
+        self.warnings = []
+
+    def state(self):
+        return {"steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
+                          for i, n in enumerate(self.STEPS)], "error": self.error, "view": self.view,
+                "warnings": self.warnings}
+
+    def work(self):
+        from datetime import datetime, timezone
+        import socket
+        try:
+            try:
+                inv = collect_inventory(self.device_id, self.run)
+            except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+                self.warnings.append("Windows Update status unavailable: %s" % exc)
+                inv = {"hostname": socket.gethostname()}
+            self.step = 1
+            raw = collect_posture(self.run)
+            self.step = 2
+            procs = running_processes(self.run)
+            self.step = 3
+            result = assess(inv, procs)
+            status = build_status(result["inventory"], raw, result["gate"], self.device_id,
+                                  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+            problems = device_status.validate(status)
+            if problems:
+                raise RuntimeError("status failed its own contract: " + "; ".join(problems))
+            self.status = status
+            self.view = ui.view(status, device_status.score(status), result["inventory"], result["gate"])
+            self.step = len(self.STEPS)
+        except Exception as exc:  # shown on the page; a silent black window is the failure to avoid
+            self.error = "%s: %s" % (type(exc).__name__, str(exc)[:300])
 
 
-def render(result):
-    inv, gate = result["inventory"], result["gate"]
-    rows = "".join("<li>%s</li>" % html.escape(r) for r in gate["reasons"])
-    return ("<!doctype html><meta charset=utf-8><title>AutoPatch</title><body style='font:16px system-ui;max-width:36rem;margin:2rem auto'>"
-            "<h1>AutoPatch: %s</h1><p>%s &middot; patch %s &middot; %s security updates pending &middot; reboot needed: %s</p>"
-            "<h2>Posture score: %s</h2><ul>%s</ul><h2>Safe to auto-apply now? %s</h2><ul>%s</ul><p><small>Read-only. Windows Update does the patching.</small></p>"
-            % (html.escape(str(inv.get("hostname"))), html.escape(str(inv.get("os"))), html.escape(str(inv.get("patch_level"))),
-               html.escape(str(inv.get("security_updates_pending"))), inv.get("reboot_required"),
-               html.escape(str(result.get("score", "not measured"))), checks_html(result),
-               html.escape(gate["decision"]), rows))
-
-
-def serve(result, port):
+def serve(scan, port):
     class H(BaseHTTPRequestHandler):
         def do_GET(self):
-            body = (json.dumps(result) if self.path == "/status.json" else render(result)).encode()
+            if self.path == "/api/state":
+                body, kind = json.dumps(scan.state()).encode(), "application/json"
+            elif self.path == "/status.json":
+                body, kind = json.dumps(getattr(scan, "status", {})).encode(), "application/json"
+            else:
+                body, kind = ui.PAGE.encode(), "text/html; charset=utf-8"
             self.send_response(200)
-            self.send_header("Content-Type", "application/json" if self.path == "/status.json" else "text/html; charset=utf-8")
+            self.send_header("Content-Type", kind)
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+
         def log_message(self, *a):
             pass
-    HTTPServer(("127.0.0.1", port), H).serve_forever()
+    server = HTTPServer(("127.0.0.1", port), H)
+    return server
 
 
 def main(argv=None):
+    import hashlib
+    import socket
+    import threading
+    import webbrowser
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--device-id", default=None, help="default: windows-<hash of this PC name>")
     p.add_argument("--port", type=int, default=8765)
     a = p.parse_args(argv)
-    if not a.device_id:
-        import hashlib
-        import socket
-        a.device_id = "windows-" + hashlib.sha1(socket.gethostname().encode()).hexdigest()[:8]
-    result = assess(collect_inventory(a.device_id), running_processes())
-    from datetime import datetime, timezone
-    status = build_status(result["inventory"], collect_posture(), result["gate"], a.device_id,
-                          datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-    problems = device_status.validate(status)
-    if problems:
-        raise SystemExit("status failed its own contract: " + "; ".join(problems))
-    result["status"], result["score"] = status, device_status.score(status)
-    import webbrowser
-    print("Open http://127.0.0.1:%d (opening your browser; Ctrl+C to stop)" % a.port)
-    webbrowser.open("http://127.0.0.1:%d" % a.port)
-    serve(result, a.port)
+    device_id = a.device_id or "windows-" + hashlib.sha1(socket.gethostname().encode()).hexdigest()[:8]
+    scan = Scan(device_id)
+    server = serve(scan, a.port)
+    url = "http://127.0.0.1:%d" % a.port
+    print("AutoPatch for Windows")
+    print("---------------------")
+    print("Opening %s in your browser. The scan runs there and can take a minute or two." % url)
+    print("It only reads information and changes nothing. Close this window to stop.")
+    threading.Thread(target=scan.work, daemon=True).start()
+    webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

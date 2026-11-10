@@ -37,9 +37,12 @@ class WindowsAppTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             app.collect_inventory("windows-ab12cd34", fake(code=1))
 
-    def test_render_escapes(self):
-        r = app.assess(dict(INV, hostname="<script>"), [])
-        self.assertNotIn("<script>", app.render(r))
+    def test_page_never_interpolates_device_data(self):
+        import ui
+        v = ui.view({"checks": [], "updates": {}}, None, {"hostname": "<script>"}, {"decision": "DENY", "reasons": []})
+        self.assertEqual(v["host"], "<script>")  # carried as data; the page writes it with textContent
+        self.assertIn("textContent", ui.PAGE)
+        self.assertNotIn("innerHTML", ui.PAGE)
 
 
 if __name__ == "__main__":
@@ -69,7 +72,7 @@ class PostureTests(unittest.TestCase):
     def test_good_values_pass(self):
         raw = {"defender_enabled": True, "defender_realtime": True, "defender_signature_age_days": 1,
                "firewall_profiles_enabled": [True, True, True], "bitlocker_protection": 1, "secure_boot": True,
-               "tpm_present": True, "smbv1_enabled": False, "uac_enabled": 1, "rdp_denied": 1, "winget_outdated": 0}
+               "tpm_present": True, "smbv1_enabled": False, "uac_enabled": 1, "rdp_denied": 1, "winget_outdated": 0, "os_build": 22631}
         status = app.build_status(INV, raw, {"decision": "DENY", "reasons": []}, "windows-ab12cd34", "2026-11-10T10:00:00Z")
         self.assertEqual(self.ds.score(status), 100)
 
@@ -88,3 +91,37 @@ class FrozenPathTests(unittest.TestCase):
         finally:
             del sys._MEIPASS
         self.assertEqual(app.resource("posture.ps1", Path("/src/p.ps1")), Path("/src/p.ps1"))
+
+
+class ScanTests(unittest.TestCase):
+    def test_scan_survives_inventory_failure(self):
+        calls = []
+        def run(cmd):
+            calls.append(cmd[0])
+            if "agent-windows.ps1" in " ".join(map(str, cmd)):
+                return types.SimpleNamespace(returncode=1, stdout="", stderr="update service busy")
+            if "posture.ps1" in " ".join(map(str, cmd)):
+                return types.SimpleNamespace(returncode=0, stdout='{"os_build": 19045, "defender_enabled": true}', stderr="")
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        scan = app.Scan("windows-ab12cd34", run)
+        scan.work()
+        st = scan.state()
+        self.assertIsNone(st["error"])
+        self.assertTrue(st["warnings"])
+        titles = {c["title"]: c["state"] for c in st["view"]["checks"]}
+        self.assertEqual(titles["Windows version still supported"], "fail")
+        self.assertEqual(st["view"]["pending"], None)
+
+    def test_unexpected_crash_is_shown_not_silent(self):
+        def run(cmd):
+            raise ValueError("boom")
+        scan = app.Scan("windows-ab12cd34", run)
+        scan.work()
+        self.assertIn("boom", scan.state()["error"])
+
+    def test_windows10_build_flagged(self):
+        import posture
+        st = {c["id"]: c["state"] for c in posture.to_checks({"os_build": 19045})}
+        self.assertEqual(st["os_supported"], "fail")
+        st = {c["id"]: c["state"] for c in posture.to_checks({"os_build": 22631})}
+        self.assertEqual(st["os_supported"], "pass")

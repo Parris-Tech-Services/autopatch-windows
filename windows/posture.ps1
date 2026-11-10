@@ -5,8 +5,12 @@ function Try-Get([scriptblock]$b) { try { & $b } catch { $null } }
 $mp  = Try-Get { Get-MpComputerStatus }
 $fw  = Try-Get { Get-NetFirewallProfile | ForEach-Object { [bool]$_.Enabled } }
 $bl  = Try-Get { (Get-BitLockerVolume -MountPoint $env:SystemDrive).ProtectionStatus }
+if ($null -eq $bl) { $bl = Try-Get { $v = (New-Object -ComObject Shell.Application).NameSpace($env:SystemDrive).Self.ExtendedProperty("System.Volume.BitLockerProtection"); if ($null -ne $v) { [int]$v } } }
 $sb  = Try-Get { Confirm-SecureBootUEFI }
+if ($null -eq $sb) { $sb = Try-Get { $r = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State" -ErrorAction Stop).UEFISecureBootEnabled; if ($null -ne $r) { [bool]$r } } }
 $tpm = Try-Get { (Get-Tpm).TpmPresent }
+if ($null -eq $tpm) { $tpm = Try-Get { [bool](Get-PnpDevice -Class SecurityDevices -PresentOnly | Where-Object { $_.FriendlyName -like "*Trusted Platform Module*" }) } }
+$build = Try-Get { [int](Get-CimInstance Win32_OperatingSystem).BuildNumber }
 $smb = Try-Get { (Get-SmbServerConfiguration).EnableSMB1Protocol }
 $uac = Try-Get { (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System").EnableLUA }
 $rdp = Try-Get { (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server").fDenyTSConnections }
@@ -27,5 +31,6 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
   smbv1_enabled = $smb
   uac_enabled = $uac
   rdp_denied = $rdp
+  os_build = $build
   winget_outdated = $wg
 } | ConvertTo-Json -Compress
