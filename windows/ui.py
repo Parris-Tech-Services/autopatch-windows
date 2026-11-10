@@ -54,7 +54,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:1.5rem}u
 <h1>AutoPatch</h1><p class="sub" id="sub">Checking this PC. Nothing is changed.</p>
 <div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><p class="fix">The Windows Update check can take a minute or two. This page updates by itself.</p></div>
 <div id="out" hidden></div>
-<footer>Read-only. Nothing is installed or changed. Windows Update does the patching. This page only works on this PC.</footer>
+<footer><div id="ver"></div>Read-only. Nothing is installed or changed. Windows Update does the patching. This page only works on this PC.</footer>
 </main><script>
 const $=id=>document.getElementById(id);
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
@@ -79,7 +79,7 @@ function render(v){
 }
 async function poll(){
   try{const s=await (await fetch("/api/state")).json();
-    const ul=$("steps");ul.textContent="";for(const st of s.steps){ul.append(el("li",st.state,(st.state==="done"?"✓ ":st.state==="on"?"… ":"")+st.name))}
+    if(s.version)$("ver").textContent="AutoPatch for Windows, version "+s.version;const ul=$("steps");ul.textContent="";for(const st of s.steps){ul.append(el("li",st.state,(st.state==="done"?"✓ ":st.state==="on"?"… ":"")+st.name))}
     if(s.error){$("scan").textContent="";$("scan").append(el("h2","","Something went wrong"),el("p","",s.error),el("p","fix","Close this window and run it again. If it keeps happening, tell Claude the message above."));return}
     if(s.view){render(s.view);return}
   }catch(e){}

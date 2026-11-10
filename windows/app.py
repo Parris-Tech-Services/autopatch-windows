@@ -36,6 +36,12 @@ def resource(frozen_name, source_path):
 AGENT = resource("devices/agent-windows.ps1", ROOT / "devices" / "agent-windows.ps1")
 POSTURE = resource("posture.ps1", Path(__file__).resolve().parent / "posture.ps1")
 MIN_FREE_GB = 10.0
+BASE_VERSION = "0.3"
+try:
+    from _version import BUILD  # written by the release workflow: "<short commit> <UTC time>"
+except ImportError:
+    BUILD = "dev build"
+VERSION = "%s (%s)" % (BASE_VERSION, BUILD)
 
 
 def _run(cmd):
@@ -106,7 +112,7 @@ class Scan:
         self.warnings = []
 
     def state(self):
-        return {"steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
+        return {"version": VERSION, "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
                           for i, n in enumerate(self.STEPS)], "error": self.error, "view": self.view,
                 "warnings": self.warnings}
 
@@ -171,8 +177,8 @@ def main(argv=None):
     scan = Scan(device_id)
     server = serve(scan, a.port)
     url = "http://127.0.0.1:%d" % a.port
-    print("AutoPatch for Windows")
-    print("---------------------")
+    print("AutoPatch for Windows  version %s" % VERSION)
+    print("--------------------------------------------")
     print("Opening %s in your browser. The scan runs there and can take a minute or two." % url)
     print("It only reads information and changes nothing. Close this window to stop.")
     threading.Thread(target=scan.work, daemon=True).start()

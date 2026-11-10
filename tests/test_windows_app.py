@@ -125,3 +125,11 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(st["os_supported"], "fail")
         st = {c["id"]: c["state"] for c in posture.to_checks({"os_build": 22631})}
         self.assertEqual(st["os_supported"], "pass")
+
+
+class VersionTests(unittest.TestCase):
+    def test_state_reports_version_and_page_shows_it(self):
+        import ui
+        scan = app.Scan("windows-ab12cd34", lambda cmd: types.SimpleNamespace(returncode=1, stdout="", stderr="x"))
+        self.assertIn(app.BASE_VERSION, scan.state()["version"])
+        self.assertIn('id="ver"', ui.PAGE)
