@@ -48,8 +48,21 @@ AutoPatch's automatic patching scope even if Windows says it is not domain joine
    read-only permission. **It is not a cryptographic patch authorisation.**
    Transfer it back to that same personal device privately. Never distribute
    the phone's HMAC key or complete multi-device registry.
-4. Run the normal local Windows/Fedora AutoPatch status app. While it runs,
-   save **on that same device** its local status file:
+4. Start the normal local status app with **the exact enrolled device ID**
+   (otherwise it will generate a different ID and ingestion will block).
+   On Fedora, from a source checkout:
+   
+   ```sh
+   python3 linux/autopatch_linux.py --device-id home-fedora-01
+   ```
+   
+   On personal Windows from a PowerShell terminal where the released exe lives:
+   
+   ```powershell
+   .\autopatch-windows.exe --device-id home-windows-01
+   ```
+   
+   While it runs, save **on that same device** its local status file:
    
    ```sh
    curl -fsS http://127.0.0.1:8765/status.json > ./status.json
