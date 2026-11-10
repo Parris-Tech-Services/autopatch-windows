@@ -142,7 +142,7 @@ class Scan:
         self.warnings = []
 
     def state(self):
-        return {"product": "AutoPatch for Windows", "version": VERSION, "admin": is_admin(), "can_elevate": True, "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
+        return {"product": "AutoPatch for Windows", "version": VERSION, "admin": is_admin(), "can_elevate": True, "elevation": getattr(self, "elevation", None), "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
                           for i, n in enumerate(self.STEPS)], "error": self.error, "view": self.view,
                 "warnings": self.warnings}
 

@@ -174,3 +174,59 @@ class SharedPageWordingTests(unittest.TestCase):
         self.assertNotIn('["Windows",v', page)
         self.assertIn("dnf does the patching", page)
         self.assertNotIn("{{PATCHER}}", page)
+
+
+class ElevationServerTests(unittest.TestCase):
+    """The shared server must never block on the permission prompt, and must publish the outcome."""
+
+    def serve(self, on_elevate):
+        import server, threading, time
+        class Scan:
+            def state(self):
+                return {"elevation": getattr(self, "elevation", None)}
+        import socket
+        with socket.socket() as probe_socket:
+            probe_socket.bind(("127.0.0.1", 0))
+            port = probe_socket.getsockname()[1]  # a free port, so the origin check sees the real one
+        scan = Scan()
+        srv = server.serve(scan, port, "<html>x</html>", on_elevate)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return scan, srv, port
+
+    def post(self, port, host=None):
+        import urllib.request
+        req = urllib.request.Request("http://127.0.0.1:%d/api/elevate" % port, method="POST")
+        if host:
+            req.add_header("Host", host)
+        return urllib.request.urlopen(req, timeout=5)
+
+    def test_slow_prompt_does_not_block_and_outcome_is_published(self):
+        import threading, time, urllib.request, json
+        release = threading.Event()
+        scan, srv, port = self.serve(lambda p: release.wait(5) or True)
+        # same-origin check compares Host with the server's own port
+        t0 = time.time()
+        self.post(port, host="127.0.0.1:%d" % port).read()
+        self.assertLess(time.time() - t0, 2)          # returned at once while the "prompt" is still open
+        self.assertEqual(scan.elevation, "asked")
+        release.set()
+        for _ in range(50):
+            if scan.elevation == "started":
+                break
+            time.sleep(0.1)
+        self.assertEqual(scan.elevation, "started")
+        srv.shutdown()
+
+    def test_declined_is_reported_and_foreign_origin_is_refused(self):
+        import time, urllib.error
+        scan, srv, port = self.serve(lambda p: False)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post(port, host="evil.example")
+        self.assertEqual(ctx.exception.code, 403)
+        self.post(port, host="127.0.0.1:%d" % port).read()
+        for _ in range(50):
+            if scan.elevation == "declined":
+                break
+            time.sleep(0.1)
+        self.assertEqual(scan.elevation, "declined")
+        srv.shutdown()
