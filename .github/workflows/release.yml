@@ -50,10 +50,6 @@ jobs:
       - name: Smoke test the built exe on real Windows
         run: python tests/smoke_exe.py dist/autopatch-windows.exe
         timeout-minutes: 15
-      - name: Elevation test (the page's admin button, on a runner that is an administrator)
-        run: python tests/smoke_exe.py dist/autopatch-windows.exe elevation
-        timeout-minutes: 15
-        continue-on-error: true
       - name: Publish as the latest release
         if: github.event_name != 'pull_request'
         shell: bash
@@ -62,3 +58,7 @@ jobs:
         run: |
           gh release delete latest --cleanup-tag --yes || true
           gh release create latest dist/autopatch-windows.exe dist/autopatch-linux.pyz --title "AutoPatch (latest): Windows exe and Fedora/Linux app" --notes "Read-only. Windows: autopatch-windows.exe is unsigned, so SmartScreen will warn; choose More info, then Run anyway. Fedora/Linux: python3 autopatch-linux.pyz. Built from commit ${{ github.sha }}."
+      - name: Elevation test (informational, runs after publishing so it never delays a release)
+        run: python tests/smoke_exe.py dist/autopatch-windows.exe elevation
+        timeout-minutes: 15
+        continue-on-error: true
