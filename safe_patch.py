@@ -43,7 +43,7 @@ def stamp(raw):
     except (ValueError, AttributeError):
         raise Blocked("missing or invalid timestamp") from None
 
-def gate(policy, status, package, *, system=None, hostname=None, now=None,
+def gate(policy, status, package, *, approved_inventory=None, system=None, hostname=None, now=None,
          backup_exists=lambda p: Path(p).is_file(), free_gb=None):
     system = system or platform.system().lower()
     hostname = hostname or platform.node()
@@ -59,6 +59,14 @@ def gate(policy, status, package, *, system=None, hostname=None, now=None,
     need(policy.get("ownership") == "personal", "not explicitly personal")
     need(policy.get("employer_managed") is False, "work/client management not excluded")
     need(policy.get("patching_enabled") is True, "patching not opted in")
+    receipt = approved_inventory if isinstance(approved_inventory, dict) else {}
+    need(receipt.get("device_id") == policy.get("device_id")
+         and receipt.get("device_class") == system
+         and receipt.get("hostname") == hostname, "approved device identity missing")
+    need(receipt.get("status") == "enrolled_readonly"
+         and receipt.get("permissions") == ["inventory_read"]
+         and receipt.get("auto_patch") is False
+         and receipt.get("remote_control") is False, "approved inventory is not read-only")
     need(policy.get("auto_restart") is False, "automatic restart is forbidden")
     need(policy.get("reboot_approved") is False, "reboot approval must remain false here")
     need(bool(PKG.fullmatch(package)), "invalid package id")
@@ -127,11 +135,11 @@ def version(command_runner, system, package):
                     return candidate
     return None
 
-def apply(policy, status, package, *, apply_change=False, system=None, hostname=None,
+def apply(policy, status, package, *, approved_inventory=None, apply_change=False, system=None, hostname=None,
           now=None, command_runner=run, backup_exists=lambda p: Path(p).is_file(),
           free_gb=None):
     system = system or platform.system().lower()
-    decision = gate(policy, status, package, system=system, hostname=hostname,
+    decision = gate(policy, status, package, approved_inventory=approved_inventory, system=system, hostname=hostname,
                     now=now, backup_exists=backup_exists, free_gb=free_gb)
     if decision["decision"] != "ALLOW":
         return {"status": "BLOCKED", "reasons": decision["reasons"], "changed": False}
@@ -168,6 +176,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--policy", type=Path, required=True)
     p.add_argument("--status", type=Path, required=True)
+    p.add_argument("--approved-inventory", type=Path, required=True)
     p.add_argument("--package", required=True)
     p.add_argument("--apply", action="store_true", help="Explicitly execute the approved local patch")
     p.add_argument("--out", type=Path, required=True)
@@ -175,7 +184,8 @@ def main(argv=None):
     try:
         pol = json.loads(a.policy.read_text(encoding="utf8"))
         st = json.loads(a.status.read_text(encoding="utf8"))
-        outcome = apply(pol, st, a.package, apply_change=a.apply)
+        receipt = json.loads(a.approved_inventory.read_text(encoding="utf8"))
+        outcome = apply(pol, st, a.package, approved_inventory=receipt, apply_change=a.apply)
         a.out.parent.mkdir(parents=True, exist_ok=True)
         a.out.write_text(json.dumps(outcome, indent=2)+"\n", encoding="utf8")
         a.out.chmod(0o600)
