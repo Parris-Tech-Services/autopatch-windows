@@ -38,6 +38,12 @@ Today the app only LOOKS and DECIDES. It installs nothing and changes nothing. W
 - BitLocker: the shell property `System.Volume.BitLockerProtection` read `2`. Probably "off" but its meaning is unconfirmed, so it is reported unknown. Needs admin `Get-BitLockerVolume` / `manage-bde -status` to settle.
 - TPM: not confirmable without admin (the non-admin PnP lookup found nothing; a laptop of this class almost certainly has one). Needs admin `Get-Tpm`.
 
+## Ground truth from a second laptop (Lenovo ThinkPad, Windows 10 22H2 build 19045, UEFI, admin terminal)
+- BitLocker: `Get-BitLockerVolume` ProtectionStatus Off (0), `manage-bde -status` "Protection Off, Fully Decrypted, no key protectors". Shell `System.Volume.BitLockerProtection` read `2` on the same drive, so 2 = off here too. Still reported unknown (undocumented value) but the detail now says "usually means off".
+- Secure Boot: `Confirm-SecureBootUEFI` False and registry `UEFISecureBootEnabled` 0 agree. The registry fallback is right on this machine.
+- TPM: `Get-Tpm` TpmPresent False even as admin, but PnP lists a non-present "Trusted Platform Module 2.0" device, so the chip exists and is switched off in the BIOS. The probe now reports `tpm_seen_not_present`, and the detail says so.
+- The app's admin results matched every admin command. Non-admin results match the expected fallbacks (BitLocker and TPM unknown, Secure Boot fail via the registry). The non-admin run was simulated by running the fallback reads, because `runas /trustlevel` will not run non-interactively.
+
 ## Open work, roughly in order
 1. Ground truth on real Windows: with an administrator terminal, run `Get-Tpm`, `Get-BitLockerVolume`, `Confirm-SecureBootUEFI`, `manage-bde -status` and compare with the app's admin run. Fix `posture.ps1`/`posture.py` where they disagree. Settle what shell BitLockerProtection values mean.
 2. Test the page's "Re-check with administrator rights" button on a real desktop (the UAC prompt cannot be exercised in CI). It relaunches the exe elevated on port+1.

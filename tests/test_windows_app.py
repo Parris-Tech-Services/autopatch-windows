@@ -158,6 +158,25 @@ class FallbackHonestyTests(unittest.TestCase):
         self.assertEqual(st["bitlocker_on"], "unknown")
         self.assertEqual(st["tpm_present"], "unknown")
 
+    def checks(self, raw):
+        import posture
+        return {c["id"]: c for c in posture.to_checks(raw)}
+
+    def test_thinkpad_tpm_switched_off_in_bios(self):
+        # Real ThinkPad: Get-Tpm (admin) said TpmPresent False, but PnP lists a non-present "TPM 2.0" device.
+        admin = self.checks({"tpm_present": False, "tpm_seen_not_present": True})["tpm_present"]
+        self.assertEqual(admin["state"], "fail")
+        self.assertIn("switched off in the BIOS", admin["detail"])
+        nonadmin = self.checks({"tpm_pnp_found": False, "tpm_seen_not_present": True})["tpm_present"]
+        self.assertEqual(nonadmin["state"], "unknown")
+        self.assertIn("BIOS", nonadmin["detail"])
+        self.assertEqual(self.checks({"tpm_present": True, "tpm_seen_not_present": True})["tpm_present"]["state"], "pass")
+
+    def test_bitlocker_shell_2_stays_unknown_but_says_probably_off(self):
+        c = self.checks({"bitlocker_shell": 2})["bitlocker_on"]
+        self.assertEqual(c["state"], "unknown")
+        self.assertIn("usually means BitLocker is off", c["detail"])
+
     def test_bitlocker_status_unknown_is_not_a_failure(self):
         self.assertEqual(self.states({"bitlocker_protection": 2})["bitlocker_on"], "unknown")
         self.assertEqual(self.states({"bitlocker_protection": "Unknown"})["bitlocker_on"], "unknown")

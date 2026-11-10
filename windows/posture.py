@@ -30,17 +30,28 @@ def _bitlocker(raw):
         return "unknown", "BitLocker reports protection status %s (unknown)" % api
     if shell == 1:
         return "pass", "Drive shows as protected"
+    if shell == 2:
+        # 2 matched "protection off" on a real ThinkPad (checked with manage-bde as admin), but the value is
+        # undocumented, so it stays unknown without an authoritative read.
+        return "unknown", "Drive property reads 2, which usually means BitLocker is off; administrator rights are needed to confirm"
     if shell is not None:
         return "unknown", "Drive property reads %s; cannot confirm without administrator rights" % shell
     return "unknown", "could not be read"
 
 
 def _tpm(raw):
-    api = raw.get("tpm_present")
+    api, seen_off = raw.get("tpm_present"), raw.get("tpm_seen_not_present") is True
+    if api:
+        return "pass", "TPM present"
     if api is not None:
-        return ("pass" if api else "fail"), "TPM present" if api else "No TPM reported"
+        if seen_off:
+            return "fail", "This PC has a TPM chip, but it is switched off in the BIOS"
+        return "fail", "No TPM reported"
     if raw.get("tpm_pnp_found") is True:
         return "pass", "TPM device found"
+    if seen_off:
+        # Weak evidence only: stays unknown, but say what was seen.
+        return "unknown", "A TPM chip was seen before but is not active now; it may be switched off in the BIOS"
     return "unknown", "Could not confirm a TPM without administrator rights"
 
 

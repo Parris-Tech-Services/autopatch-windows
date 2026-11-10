@@ -12,6 +12,8 @@ if ($null -eq $sb) { $sb = Try-Get { $r = (Get-ItemProperty "HKLM:\SYSTEM\Curren
 $tpm = Try-Get { (Get-Tpm).TpmPresent }
 $tpm_pnp = $null
 if ($null -eq $tpm) { $tpm_pnp = Try-Get { [bool](Get-PnpDevice -Class SecurityDevices -PresentOnly | Where-Object { $_.FriendlyName -like "*Trusted Platform Module*" }) } }
+# A TPM Windows has seen before but that is not present now usually means it was switched off in the BIOS (seen on a real ThinkPad).
+$tpm_seen_not_present = Try-Get { [bool](Get-PnpDevice -Class SecurityDevices | Where-Object { $_.FriendlyName -like "*Trusted Platform Module*" -and -not $_.Present }) }
 $build = Try-Get { [int](Get-CimInstance Win32_OperatingSystem).BuildNumber }
 $ptype = Try-Get { [int](Get-CimInstance Win32_OperatingSystem).ProductType }
 $smb = Try-Get { (Get-SmbServerConfiguration).EnableSMB1Protocol }
@@ -33,6 +35,7 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
   secure_boot = $sb
   tpm_present = $tpm
   tpm_pnp_found = $tpm_pnp
+  tpm_seen_not_present = $tpm_seen_not_present
   smbv1_enabled = $smb
   uac_enabled = $uac
   rdp_denied = $rdp
