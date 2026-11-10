@@ -145,6 +145,10 @@ class FallbackHonestyTests(unittest.TestCase):
         self.assertEqual(st["bitlocker_on"], "unknown")
         self.assertEqual(st["tpm_present"], "unknown")
 
+    def test_bitlocker_status_unknown_is_not_a_failure(self):
+        self.assertEqual(self.states({"bitlocker_protection": 2})["bitlocker_on"], "unknown")
+        self.assertEqual(self.states({"bitlocker_protection": "Unknown"})["bitlocker_on"], "unknown")
+
     def test_authoritative_reads_still_pass_or_fail(self):
         self.assertEqual(self.states({"bitlocker_protection": 0})["bitlocker_on"], "fail")
         self.assertEqual(self.states({"tpm_present": False})["tpm_present"], "fail")

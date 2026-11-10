@@ -21,8 +21,13 @@ WIN10_LAST_BUILD = 19045  # Windows 10 22H2 is the last Windows 10 release; main
 
 def _bitlocker(raw):
     api, shell = raw.get("bitlocker_protection"), raw.get("bitlocker_shell")
+    # Get-BitLockerVolume ProtectionStatus: 0 Off, 1 On, 2 Unknown (e.g. a locked drive). Unknown is not a failure.
+    if api in (1, "On"):
+        return "pass", "BitLocker protection is on"
+    if api in (0, "Off"):
+        return "fail", "BitLocker protection is off"
     if api is not None:
-        return ("pass" if api in (1, "On") else "fail"), "BitLocker reports protection %s" % api
+        return "unknown", "BitLocker reports protection status %s (unknown)" % api
     if shell == 1:
         return "pass", "Drive shows as protected"
     if shell is not None:
