@@ -119,6 +119,19 @@ class ScanTests(unittest.TestCase):
         scan.work()
         self.assertIn("boom", scan.state()["error"])
 
+    def test_servers_are_not_judged_as_windows_10(self):
+        import posture
+        st = {c["id"]: c["state"] for c in posture.to_checks({"os_build": 17763, "os_product_type": 3})}
+        self.assertEqual(st["os_supported"], "unknown")
+        st = {c["id"]: c["state"] for c in posture.to_checks({"os_build": 19045, "os_product_type": 1})}
+        self.assertEqual(st["os_supported"], "fail")
+
+    def test_page_script_has_no_python_escape_warnings(self):
+        import ui, warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compile(open(ui.__file__, encoding="utf-8").read(), ui.__file__, "exec")
+
     def test_windows10_build_flagged(self):
         import posture
         st = {c["id"]: c["state"] for c in posture.to_checks({"os_build": 19045})}

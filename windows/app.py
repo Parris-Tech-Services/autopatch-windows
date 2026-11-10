@@ -101,6 +101,19 @@ def assess(inv, procs, extra=None):
     return {"inventory": inv, "gate": os_update_gate.check(req)}
 
 
+LOG = Path(tempfile.gettempdir()) / "autopatch-windows.log"
+
+
+def log(message):
+    """Small local log so a silent failure can be diagnosed afterwards. Never raises."""
+    try:
+        from datetime import datetime
+        with open(LOG, "a", encoding="utf-8") as fh:
+            fh.write("%s %s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message))
+    except OSError:
+        pass
+
+
 def is_admin():
     try:
         import ctypes
@@ -211,6 +224,7 @@ def main(argv=None):
     import hashlib
     import socket
     import threading
+    import time
     import webbrowser
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--device-id", default=None, help="default: windows-<hash of this PC name>")
@@ -218,19 +232,36 @@ def main(argv=None):
     a = p.parse_args(argv)
     device_id = a.device_id or "windows-" + hashlib.sha1(socket.gethostname().encode()).hexdigest()[:8]
     scan = Scan(device_id)
-    server = serve(scan, a.port)
+    log("start version=%s port=%d admin=%s device=%s" % (VERSION, a.port, is_admin(), device_id))
+    try:
+        server = serve(scan, a.port)
+    except OSError as exc:
+        log("cannot listen on port %d: %s" % (a.port, exc))
+        print("Could not start: port %d is already in use. Close the other AutoPatch window and try again." % a.port)
+        input("Press Enter to close.")
+        return
     url = "http://127.0.0.1:%d" % a.port
     print("AutoPatch for Windows  version %s" % VERSION)
     print("--------------------------------------------")
     print("Opening %s in your browser. The scan runs there and can take a minute or two." % url)
     print("It only reads information and changes nothing. Close this window to stop.")
+    # The server must be answering before anything else can go wrong, so it runs in its own thread
+    # and neither the scan nor a slow browser launch can keep it from starting.
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     threading.Thread(target=scan.work, daemon=True).start()
-    webbrowser.open(url)
+
+    def open_browser():
+        try:
+            webbrowser.open(url)
+        except Exception as exc:  # a browser that will not open must not stop the app
+            log("browser did not open: %s" % exc)
+    threading.Thread(target=open_browser, daemon=True).start()
+    log("listening on %s" % url)
     try:
-        server.serve_forever()
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
         pass
-
 
 if __name__ == "__main__":
     main()

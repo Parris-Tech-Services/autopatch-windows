@@ -34,7 +34,7 @@ def view(status, score, inventory, gate):
     }
 
 
-PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AutoPatch</title><style>
 :root{--bg:#f4f6fa;--card:#fff;--text:#1b2433;--muted:#5d6b82;--line:#e3e8f0;--ok:#168a45;--warn:#b7791f;--bad:#c53030;--unk:#6b7a90;--accent:#1a56db}
 @media(prefers-color-scheme:dark){:root{--bg:#0f1624;--card:#18223a;--text:#e8eef9;--muted:#9fb0cc;--line:#26324d;--ok:#4cc38a;--warn:#e0b050;--bad:#f27070;--unk:#8fa0bb;--accent:#6ea0ff}}
