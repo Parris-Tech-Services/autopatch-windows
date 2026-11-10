@@ -113,3 +113,13 @@ class PackagingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SharedPageWordingTests(unittest.TestCase):
+    def test_linux_page_never_says_windows(self):
+        import ui
+        page = ui.page("dnf")
+        self.assertNotIn("Windows Update", page)
+        self.assertNotIn('["Windows",v', page)
+        self.assertIn("dnf does the patching", page)
+        self.assertNotIn("{{PATCHER}}", page)
