@@ -1,0 +1,29 @@
+name: Build and publish Windows exe
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Tests
+        run: python -m unittest discover -s tests -v
+      - name: Build exe
+        run: |
+          python -m pip install pyinstaller==6.11.1
+          pyinstaller --onefile --name autopatch-windows --add-data "devices/agent-windows.ps1;devices" --add-data "windows/posture.ps1;." --paths . windows/app.py
+      - name: Bundled scripts are inside the exe
+        run: python -c "import sys;d=open('dist/autopatch-windows.exe','rb').read();sys.exit(0 if b'posture.ps1' in d and b'agent-windows.ps1' in d else 1)"
+      - name: Publish as the latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest dist/autopatch-windows.exe --title "AutoPatch for Windows (latest)" --notes "Read-only. Unsigned: Windows SmartScreen will warn; choose More info, then Run anyway. Built from commit ${{ github.sha }}."
