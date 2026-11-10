@@ -58,7 +58,7 @@ try:
             started = json.loads(r.read())["started"]
         print("elevation request accepted by Windows:", started)
         assert started, "ShellExecute runas did not start the elevated instance"
-        st2 = wait_state(8766, 600)
+        st2 = wait_state(8766, 240)
         assert not st2.get("error"), st2.get("error")
         print("ELEVATED instance: admin =", st2["admin"], "| score:", st2["view"]["score"])
         for c in st2["view"]["checks"]:

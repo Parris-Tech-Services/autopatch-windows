@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+concurrency:
+  group: release
+  cancel-in-progress: false
 permissions:
   contents: write
 jobs:
@@ -28,7 +31,7 @@ jobs:
         timeout-minutes: 15
       - name: Elevation test (the page's admin button, on a runner that is an administrator)
         run: python tests/smoke_exe.py dist/autopatch-windows.exe elevation
-        timeout-minutes: 20
+        timeout-minutes: 8
         continue-on-error: true
       - name: Publish as the latest release
         shell: bash
