@@ -23,6 +23,13 @@ jobs:
           pyinstaller --onefile --name autopatch-windows --add-data "devices/agent-windows.ps1;devices" --add-data "windows/posture.ps1;." --paths . windows/app.py
       - name: Bundled scripts are inside the exe
         run: python -c "import sys;d=open('dist/autopatch-windows.exe','rb').read();sys.exit(0 if b'posture.ps1' in d and b'agent-windows.ps1' in d else 1)"
+      - name: Smoke test the built exe on real Windows
+        run: python tests/smoke_exe.py dist/autopatch-windows.exe
+        timeout-minutes: 15
+      - name: Elevation test (the page's admin button, on a runner that is an administrator)
+        run: python tests/smoke_exe.py dist/autopatch-windows.exe elevation
+        timeout-minutes: 20
+        continue-on-error: true
       - name: Publish as the latest release
         shell: bash
         env:
