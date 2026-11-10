@@ -151,3 +151,16 @@ class FallbackHonestyTests(unittest.TestCase):
         self.assertEqual(self.states({"bitlocker_shell": 1})["bitlocker_on"], "pass")
         self.assertEqual(self.states({"tpm_pnp_found": True})["tpm_present"], "pass")
         self.assertEqual(self.states({"secure_boot": False})["secure_boot"], "fail")
+
+
+class ElevationTests(unittest.TestCase):
+    def test_only_own_page_can_request_elevation(self):
+        ok = {"Host": "127.0.0.1:8765", "Sec-Fetch-Site": "same-origin"}
+        self.assertTrue(app.same_origin(ok, 8765))
+        self.assertFalse(app.same_origin({"Host": "127.0.0.1:8765", "Sec-Fetch-Site": "cross-site"}, 8765))
+        self.assertFalse(app.same_origin({"Host": "evil.example", "Sec-Fetch-Site": "same-origin"}, 8765))
+
+    def test_relaunch_uses_next_port(self):
+        self.assertEqual(app.elevation_command(True, "C:/a.exe", "x.py", 8765), ("C:/a.exe", "--port 8766"))
+        prog, params = app.elevation_command(False, "python", "/x/app.py", 8765)
+        self.assertIn("--port 8766", params)
