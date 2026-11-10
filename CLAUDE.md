@@ -42,11 +42,13 @@ Today the app only LOOKS and DECIDES. It installs nothing and changes nothing. W
 - BitLocker: `Get-BitLockerVolume` ProtectionStatus Off (0), `manage-bde -status` "Protection Off, Fully Decrypted, no key protectors". Shell `System.Volume.BitLockerProtection` read `2` on the same drive, so 2 = off here too. Still reported unknown (undocumented value) but the detail now says "usually means off".
 - Secure Boot: `Confirm-SecureBootUEFI` False and registry `UEFISecureBootEnabled` 0 agree. The registry fallback is right on this machine.
 - TPM: `Get-Tpm` TpmPresent False even as admin, but PnP lists a non-present "Trusted Platform Module 2.0" device, so the chip exists and is switched off in the BIOS. The probe now reports `tpm_seen_not_present`, and the detail says so.
-- The app's admin results matched every admin command. Non-admin results match the expected fallbacks (BitLocker and TPM unknown, Secure Boot fail via the registry). The non-admin run was simulated by running the fallback reads, because `runas /trustlevel` will not run non-interactively.
+- A locally built exe (PyInstaller, same flags as CI) was run as a real standard user (launched through `explorer.exe` from an admin shell, which de-elevates; `/api/state` showed admin false). Results: BitLocker unknown, TPM unknown with the BIOS hint, Secure Boot fail, score 67. Every check matched the admin commands.
+- "Re-check with administrator rights" was clicked on that page on real hardware: UAC prompt, the elevated copy came up on port 8766 with admin true, and BitLocker/TPM/Secure Boot all read authoritatively (fail, matching the admin commands). A cross-site POST to `/api/elevate` was refused with 403. Open work item 2 is done for Windows 10.
+- Tip for agents: to get a true non-admin run from an admin terminal, run `explorer.exe <path-to-exe>`. It needs no password.
 
 ## Open work, roughly in order
 1. Ground truth on real Windows: with an administrator terminal, run `Get-Tpm`, `Get-BitLockerVolume`, `Confirm-SecureBootUEFI`, `manage-bde -status` and compare with the app's admin run. Fix `posture.ps1`/`posture.py` where they disagree. Settle what shell BitLockerProtection values mean.
-2. Test the page's "Re-check with administrator rights" button on a real desktop (the UAC prompt cannot be exercised in CI). It relaunches the exe elevated on port+1.
+2. DONE on a real ThinkPad (Windows 10 22H2): the "Re-check with administrator rights" button relaunched the exe elevated on port+1 after the UAC prompt. Still worth checking once on Windows 11.
 3. Windows Update scan time: add a time limit and a friendlier progress message; keep partial results if it times out.
 4. Check winget output parsing across Windows builds and locales.
 5. ESU (extended security updates) detection for Windows 10, so the end-of-support finding is not wrong for a PC that has ESU.

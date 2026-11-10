@@ -15,7 +15,7 @@ TITLES = {
     "rdp_closed": ("Remote Desktop closed", "Turn off Remote Desktop unless you use it."),
     "apps_current": ("Apps up to date", "Run winget upgrade --all, or update your apps."),
 }
-UNKNOWN_HINT = "Not verified, so it lowers the score until confirmed. Close the app and run it again with Run as administrator to check it."
+UNKNOWN_HINT = "Not verified, so it lowers the score until confirmed. Use the Re-check with administrator rights button to check it."
 
 
 def page(patcher):
