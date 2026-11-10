@@ -32,7 +32,7 @@ def view(status, score, inventory, gate, titles=None, unknown_hint=None):
                        "fix": (unknown_hint or UNKNOWN_HINT) if c["state"] == "unknown" else fix})
     pending = status["updates"].get("pending_security")
     return {
-        "host": inventory.get("hostname") or "this PC", "os": inventory.get("os") or "Windows",
+        "host": inventory.get("hostname") or "this PC", "os": inventory.get("os") or "this system",
         "patch": inventory.get("patch_level") or "unknown", "pending": pending,
         "reboot": status["updates"].get("reboot_required"), "score": score, "checks": checks,
         "gate": {"decision": gate["decision"], "reasons": gate["reasons"]},
@@ -57,10 +57,10 @@ h2{font-size:1rem;margin:0 0 .6rem}.row{display:flex;gap:.7rem;padding:.55rem 0;
 .pill{display:inline-block;padding:.15rem .6rem;border-radius:99px;font-size:.85rem;font-weight:600;background:var(--line)}
 footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:1.5rem}ul{margin:.4rem 0 0;padding-left:1.2rem}
 </style></head><body><main>
-<h1>AutoPatch</h1><p class="sub" id="sub">Checking this PC. Nothing is changed.</p>
-<div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><p class="fix">The Windows Update check can take a minute or two. This page updates by itself.</p></div>
+<h1>AutoPatch</h1><p class="sub" id="sub">Checking this computer. Nothing is changed.</p>
+<div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><div id="live" class="fix"></div><p class="fix">The update check can take a minute or two. This page updates by itself.</p></div>
 <div id="out" hidden></div>
-<footer><div id="ver"></div>Read-only. Nothing is installed or changed. {{PATCHER}} does the patching. This page only works on this PC.</footer>
+<footer><div id="ver"></div>Read-only. Nothing is installed or changed. {{PATCHER}} does the patching. This page only works on this computer.</footer>
 </main><script>
 const $=id=>document.getElementById(id);
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
@@ -69,7 +69,7 @@ function render(v){
   const col=v.score==null?"var(--unk)":v.score>=80?"var(--ok)":v.score>=50?"var(--warn)":"var(--bad)";
   const hero=el("div","card hero"),ring=el("div","ring",v.score==null?"?":String(v.score));ring.style.borderColor=col;
   const facts=el("div","facts");
-  for(const [a,b] of [["Computer",v.host],["Windows",v.os.replace("Microsoft ","").replace(/ 10\.0\.\d+/,"")],["Security updates waiting",v.pending==null?"Could not read":String(v.pending)],["Restart needed",v.reboot==null?"Could not read":v.reboot?"Yes":"No"]]){
+  for(const [a,b] of [["Computer",v.host],["System",v.os.replace("Microsoft ","").replace(/ 10\.0\.\d+/,"")],["Security updates waiting",v.pending==null?"Could not read":String(v.pending)],["Restart needed",v.reboot==null?"Could not read":v.reboot?"Yes":"No"]]){
     const f=el("div","fact");f.append(el("b","",b),el("span","",a));facts.append(f)}
   hero.append(ring,facts);out.append(hero);
   const groups=[["fail","Needs attention"],["unknown","Could not read"],["pass","Looks good"]];
@@ -82,8 +82,13 @@ function render(v){
     const a=el("div","card");a.append(el("h2","","Check the items it could not read"));
     a.append(el("p","fix","Some checks need administrator rights. Windows will ask you to approve. The app still only reads and changes nothing."));
     const b=el("button","btn","Re-check with administrator rights");
-    b.onclick=async()=>{b.disabled=true;try{const r=await (await fetch("/api/elevate",{method:"POST"})).json();
-      b.textContent=r.started?"Approved: the new results open in a new browser tab":"Not approved or not available. You can also right-click the exe and choose Run as administrator."}catch(e){b.textContent="Could not start. Right-click the exe and choose Run as administrator."}};
+    b.onclick=async()=>{b.disabled=true;b.textContent="Waiting for you to answer the Windows permission prompt...";
+      try{await fetch("/api/elevate",{method:"POST"});
+        for(let i=0;i<180;i++){await new Promise(r=>setTimeout(r,1000));const s=await (await fetch("/api/state")).json();
+          if(s.elevation==="started"){b.textContent="Approved: the new results open in a new browser tab";return}
+          if(s.elevation==="declined"){b.textContent="Not approved, so nothing changed. You can also right-click the exe and choose Run as administrator.";return}}
+        b.textContent="Still waiting. Check for a Windows permission prompt behind other windows."
+      }catch(e){b.textContent="Could not start. Right-click the exe and choose Run as administrator."}};
     a.append(b);out.append(a)}
   const g=el("div","card");g.append(el("h2","","Automatic patching"));
   g.append(el("span","pill",v.gate.decision==="ALLOW"?"Safe to run now":"Not switched on yet"));
@@ -93,6 +98,10 @@ function render(v){
 async function poll(){
   try{const s=await (await fetch("/api/state")).json();
     window.__admin=!!s.admin;window.__can=s.can_elevate;if(s.admin)$("sub").textContent="Running with elevated rights. Reading only.";if(s.version)$("ver").textContent=(s.product||"AutoPatch")+", version "+s.version;const ul=$("steps");ul.textContent="";for(const st of s.steps){ul.append(el("li",st.state,(st.state==="done"?"✓ ":st.state==="on"?"… ":"")+st.name))}
+    const live=$("live");live.textContent="";
+    if(s.current){live.append(el("div","",("Now running: "+s.current.label+" ("+s.current.seconds+" s)")),el("code","fix",s.current.cmd))}
+    for(const h of (s.history||[]).slice().reverse()){live.append(el("div","fix",(h.rc===0||h.rc===100?"✓ ":h.rc===124?"⏱ timed out: ":h.rc===127?"– not installed: ":"· ")+h.label+" ("+h.seconds+" s)"))}
+    if(s.log_file&&(s.current||(s.history||[]).length))live.append(el("div","fix","Log file: "+s.log_file))
     if(s.error){$("scan").textContent="";$("scan").append(el("h2","","Something went wrong"),el("p","",s.error),el("p","fix","Close this window and run it again. If it keeps happening, tell Claude the message above."));return}
     if(s.view){render(s.view);return}
   }catch(e){}

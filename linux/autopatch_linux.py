@@ -39,19 +39,34 @@ class Scan:
     STEPS = ["Reading update status (this can take a minute)", "Checking security settings",
              "Checking whether your other work is running", "Working out your score"]
 
-    def __init__(self, device_id, run=probe.run_cmd, read=probe.read_text):
-        self.device_id, self.run, self.read = device_id, run, read
+    def __init__(self, device_id, run=probe.run_cmd, read=probe.read_text, offline=False):
+        self.device_id, self.run, self.read, self.offline = device_id, run, read, offline
         self.step, self.error, self.view, self.warnings = 0, None, None, []
+        self.current, self.history = None, []
+
+    def progress(self, kind, label, cmd, rc, seconds):
+        """Live view of what the scan is doing: one command at a time, never any command output."""
+        if kind == "start":
+            self.current = {"label": label, "cmd": " ".join(cmd), "began": time.monotonic()}
+            log("start  %s  [%s]" % (label, " ".join(cmd)))
+        else:
+            self.history.append({"label": label, "rc": rc, "seconds": seconds})
+            self.history = self.history[-14:]
+            self.current = None
+            log("done   %s  rc=%s  %ss" % (label, rc, seconds))
 
     def state(self):
         return {"product": "AutoPatch for Linux", "version": VERSION, "admin": probe.os.geteuid() == 0 if hasattr(probe.os, "geteuid") else False,
                 "can_elevate": False,
                 "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"} for i, n in enumerate(self.STEPS)],
-                "error": self.error, "view": self.view, "warnings": self.warnings}
+                "error": self.error, "view": self.view, "warnings": self.warnings,
+                "current": ({"label": self.current["label"], "cmd": self.current["cmd"],
+                             "seconds": round(time.monotonic() - self.current["began"])} if self.current else None),
+                "history": self.history, "log_file": str(log.path)}
 
     def work(self):
         try:
-            raw = probe.collect(self.run, self.read)
+            raw = probe.collect(self.run, self.read, progress=self.progress, offline=self.offline)
             self.step = 1
             checks = probe.to_checks(raw)
             self.step = 2
@@ -91,9 +106,10 @@ def main(argv=None):
     ap.add_argument("--device-id", default=None)
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--offline", action="store_true", help="never refresh package lists over the network (uses the local cache only)")
     a = ap.parse_args(argv)
     device_id = a.device_id or "linux-" + hashlib.sha1(socket.gethostname().encode()).hexdigest()[:8]
-    scan = Scan(device_id)
+    scan = Scan(device_id, offline=a.offline)
     try:
         srv = server.serve(scan, a.port, ui.page("dnf"))
     except OSError as exc:

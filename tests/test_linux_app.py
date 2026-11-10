@@ -17,7 +17,7 @@ foo.x86_64   1.0   updates
 
 
 def runner(table):
-    def run(cmd, timeout=0):
+    def run(cmd, timeout=0):  # accepts the per-command timeout like the real runner
         for key, val in table.items():
             if cmd[: len(key)] == list(key):
                 return val
@@ -26,7 +26,7 @@ def runner(table):
 
 
 FEDORA = {
-    ("dnf", "-q", "check-update", "--security"): (100, DNF_OUT),
+    ("dnf", "-q", "--cacheonly", "check-update", "--security"): (100, DNF_OUT),
     ("dnf", "needs-restarting", "-r"): (1, ""),
     ("getenforce",): (0, "Enforcing\n"),
     ("systemctl", "is-active", "firewalld"): (0, "active\n"),
@@ -71,7 +71,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_no_updates_is_a_pass(self):
         table = dict(FEDORA)
-        table[("dnf", "-q", "check-update", "--security")] = (0, "")
+        table[("dnf", "-q", "--cacheonly", "check-update", "--security")] = (0, "")
         raw = probe.collect(runner(table), read, free_gb=50)
         self.assertEqual({c["id"]: c["state"] for c in probe.to_checks(raw)}["security_updates"], "pass")
 
@@ -113,3 +113,120 @@ class PackagingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LiveProgressTests(unittest.TestCase):
+    def test_progress_reports_each_command_and_never_output(self):
+        scan = linux_app.Scan("linux-ab12cd34", runner(FEDORA), read)
+        scan.work()
+        st = scan.state()
+        labels = [h["label"] for h in st["history"]]
+        self.assertTrue(any("security updates" in l for l in labels))
+        self.assertIsNone(st["current"])
+        self.assertTrue(st["log_file"].endswith("autopatch-linux.log"))
+        self.assertNotIn("openssl", repr(st["history"]))  # package names from command output never reach the page
+
+    def test_slow_command_is_bounded_and_explained(self):
+        table = dict(FEDORA)
+        table[("dnf", "-q", "--cacheonly", "check-update", "--security")] = (1, "")  # no usable cache
+        table[("dnf", "-q", "check-update", "--security")] = (probe.TIMED_OUT, "")
+        scan = linux_app.Scan("linux-ab12cd34", runner(table), read)
+        scan.work()
+        checks = {c["title"]: c for c in scan.state()["view"]["checks"]}
+        sec = checks["Security updates installed"]
+        self.assertEqual(sec["state"], "unknown")
+        self.assertIn("timed out", sec["detail"])
+
+    def test_timeouts_are_bounded(self):
+        self.assertLessEqual(probe.T_SLOW, 300)
+        self.assertLessEqual(probe.T_FAST, 30)
+
+
+class OfflineFirstTests(unittest.TestCase):
+    def test_cache_answer_means_no_network_command_is_ever_run(self):
+        seen = []
+        base = runner(FEDORA)
+
+        def spy(cmd, timeout=0):
+            seen.append(list(cmd))
+            return base(cmd, timeout)
+        probe.collect(spy, read, free_gb=50)
+        self.assertFalse(any(c[:4] == ["dnf", "-q", "check-update", "--security"] for c in seen))
+
+    def test_no_cache_falls_back_to_network_with_a_time_limit_and_offline_flag_skips_it(self):
+        table = dict(FEDORA)
+        table[("dnf", "-q", "--cacheonly", "check-update", "--security")] = (1, "")
+        table[("dnf", "-q", "check-update", "--security")] = (100, DNF_OUT)
+        raw = probe.collect(runner(table), read, free_gb=50)
+        self.assertEqual((raw["updates_source"], raw["security_updates"]), ("network", 3))
+        raw = probe.collect(runner(table), read, free_gb=50, offline=True)
+        self.assertIsNone(raw["security_updates"])
+
+    def test_cache_source_is_stated_on_the_page(self):
+        raw = probe.collect(runner(FEDORA), read, free_gb=50)
+        detail = {c["id"]: c["detail"] for c in probe.to_checks(raw)}["security_updates"]
+        self.assertIn("package cache", detail)
+class SharedPageWordingTests(unittest.TestCase):
+    def test_linux_page_never_says_windows(self):
+        import ui
+        page = ui.page("dnf")
+        self.assertNotIn("Windows Update", page)
+        self.assertNotIn('["Windows",v', page)
+        self.assertIn("dnf does the patching", page)
+        self.assertNotIn("{{PATCHER}}", page)
+
+
+class ElevationServerTests(unittest.TestCase):
+    """The shared server must never block on the permission prompt, and must publish the outcome."""
+
+    def serve(self, on_elevate):
+        import server, threading, time
+        class Scan:
+            def state(self):
+                return {"elevation": getattr(self, "elevation", None)}
+        import socket
+        with socket.socket() as probe_socket:
+            probe_socket.bind(("127.0.0.1", 0))
+            port = probe_socket.getsockname()[1]  # a free port, so the origin check sees the real one
+        scan = Scan()
+        srv = server.serve(scan, port, "<html>x</html>", on_elevate)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return scan, srv, port
+
+    def post(self, port, host=None):
+        import urllib.request
+        req = urllib.request.Request("http://127.0.0.1:%d/api/elevate" % port, method="POST")
+        if host:
+            req.add_header("Host", host)
+        return urllib.request.urlopen(req, timeout=5)
+
+    def test_slow_prompt_does_not_block_and_outcome_is_published(self):
+        import threading, time, urllib.request, json
+        release = threading.Event()
+        scan, srv, port = self.serve(lambda p: release.wait(5) or True)
+        # same-origin check compares Host with the server's own port
+        t0 = time.time()
+        self.post(port, host="127.0.0.1:%d" % port).read()
+        self.assertLess(time.time() - t0, 2)          # returned at once while the "prompt" is still open
+        self.assertEqual(scan.elevation, "asked")
+        release.set()
+        for _ in range(50):
+            if scan.elevation == "started":
+                break
+            time.sleep(0.1)
+        self.assertEqual(scan.elevation, "started")
+        srv.shutdown()
+
+    def test_declined_is_reported_and_foreign_origin_is_refused(self):
+        import time, urllib.error
+        scan, srv, port = self.serve(lambda p: False)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post(port, host="evil.example")
+        self.assertEqual(ctx.exception.code, 403)
+        self.post(port, host="127.0.0.1:%d" % port).read()
+        for _ in range(50):
+            if scan.elevation == "declined":
+                break
+            time.sleep(0.1)
+        self.assertEqual(scan.elevation, "declined")
+        srv.shutdown()
