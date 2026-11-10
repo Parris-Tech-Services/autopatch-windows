@@ -101,17 +101,10 @@ def assess(inv, procs, extra=None):
     return {"inventory": inv, "gate": os_update_gate.check(req)}
 
 
-LOG = Path(tempfile.gettempdir()) / "autopatch-windows.log"
+import server  # noqa: E402
 
-
-def log(message):
-    """Small local log so a silent failure can be diagnosed afterwards. Never raises."""
-    try:
-        from datetime import datetime
-        with open(LOG, "a", encoding="utf-8") as fh:
-            fh.write("%s %s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message))
-    except OSError:
-        pass
+log = server.make_log("autopatch-windows.log")
+LOG = log.path
 
 
 def is_admin():
@@ -122,11 +115,7 @@ def is_admin():
         return False
 
 
-def same_origin(headers, port):
-    """Only the page this server itself serves may ask for elevation, never another website."""
-    host_ok = headers.get("Host") in ("127.0.0.1:%d" % port, "localhost:%d" % port)
-    site = headers.get("Sec-Fetch-Site")
-    return host_ok and site in (None, "same-origin")
+same_origin = server.same_origin
 
 
 def elevation_command(frozen, exe, script, port):
@@ -153,7 +142,7 @@ class Scan:
         self.warnings = []
 
     def state(self):
-        return {"version": VERSION, "admin": is_admin(), "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
+        return {"product": "AutoPatch for Windows", "version": VERSION, "admin": is_admin(), "can_elevate": True, "steps": [{"name": n, "state": "done" if i < self.step else "on" if i == self.step else "todo"}
                           for i, n in enumerate(self.STEPS)], "error": self.error, "view": self.view,
                 "warnings": self.warnings}
 
@@ -185,39 +174,7 @@ class Scan:
 
 
 def serve(scan, port):
-    class H(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == "/api/state":
-                body, kind = json.dumps(scan.state()).encode(), "application/json"
-            elif self.path == "/status.json":
-                body, kind = json.dumps(getattr(scan, "status", {})).encode(), "application/json"
-            else:
-                body, kind = ui.PAGE.encode(), "text/html; charset=utf-8"
-            self.send_response(200)
-            self.send_header("Content-Type", kind)
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self):
-            if self.path != "/api/elevate" or not same_origin(self.headers, port):
-                self.send_response(403)
-                self.end_headers()
-                return
-            try:
-                ok = launch_elevated(port)
-            except (AttributeError, OSError):
-                ok = False
-            body = json.dumps({"started": ok}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *a):
-            pass
-    server = HTTPServer(("127.0.0.1", port), H)
-    return server
+    return server.serve(scan, port, ui.page("Windows Update"), launch_elevated)
 
 
 def main(argv=None):

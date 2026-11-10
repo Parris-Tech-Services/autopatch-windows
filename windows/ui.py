@@ -18,13 +18,18 @@ TITLES = {
 UNKNOWN_HINT = "Not verified, so it lowers the score until confirmed. Close the app and run it again with Run as administrator to check it."
 
 
-def view(status, score, inventory, gate):
+def page(patcher):
+    """The page for one platform: names the tool that does the real patching."""
+    return PAGE.replace("{{PATCHER}}", patcher)
+
+
+def view(status, score, inventory, gate, titles=None, unknown_hint=None):
     """JSON view model for the page (display labels live here, not in the shared status contract)."""
     checks = []
     for c in status.get("checks", []):
-        title, fix = TITLES.get(c["id"], (c["id"], ""))
+        title, fix = (titles or TITLES).get(c["id"], (c["id"], ""))
         checks.append({"title": title, "state": c["state"], "detail": c["detail"],
-                       "fix": UNKNOWN_HINT if c["state"] == "unknown" else fix})
+                       "fix": (unknown_hint or UNKNOWN_HINT) if c["state"] == "unknown" else fix})
     pending = status["updates"].get("pending_security")
     return {
         "host": inventory.get("hostname") or "this PC", "os": inventory.get("os") or "Windows",
@@ -55,7 +60,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:1.5rem}u
 <h1>AutoPatch</h1><p class="sub" id="sub">Checking this PC. Nothing is changed.</p>
 <div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><p class="fix">The Windows Update check can take a minute or two. This page updates by itself.</p></div>
 <div id="out" hidden></div>
-<footer><div id="ver"></div>Read-only. Nothing is installed or changed. Windows Update does the patching. This page only works on this PC.</footer>
+<footer><div id="ver"></div>Read-only. Nothing is installed or changed. {{PATCHER}} does the patching. This page only works on this PC.</footer>
 </main><script>
 const $=id=>document.getElementById(id);
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
@@ -73,7 +78,7 @@ function render(v){
     for(const c of items){const r=el("div","row");r.append(el("div","dot "+s,s==="pass"?"✓":s==="fail"?"✕":"?"));
       const b=el("div");b.append(el("div","",c.title));if(s!=="pass"){if(c.detail)b.append(el("div","fix","What I read: "+c.detail));if(c.fix)b.append(el("div","fix",c.fix))}r.append(b);card.append(r)}
     out.append(card)}
-  if(v.checks.some(c=>c.state==="unknown")&&!window.__admin){
+  if(v.checks.some(c=>c.state==="unknown")&&!window.__admin&&window.__can!==false){
     const a=el("div","card");a.append(el("h2","","Check the items it could not read"));
     a.append(el("p","fix","Some checks need administrator rights. Windows will ask you to approve. The app still only reads and changes nothing."));
     const b=el("button","btn","Re-check with administrator rights");
@@ -87,7 +92,7 @@ function render(v){
 }
 async function poll(){
   try{const s=await (await fetch("/api/state")).json();
-    window.__admin=!!s.admin;if(s.admin)$("sub").textContent="Running with administrator rights. Reading only.";if(s.version)$("ver").textContent="AutoPatch for Windows, version "+s.version;const ul=$("steps");ul.textContent="";for(const st of s.steps){ul.append(el("li",st.state,(st.state==="done"?"✓ ":st.state==="on"?"… ":"")+st.name))}
+    window.__admin=!!s.admin;window.__can=s.can_elevate;if(s.admin)$("sub").textContent="Running with elevated rights. Reading only.";if(s.version)$("ver").textContent=(s.product||"AutoPatch")+", version "+s.version;const ul=$("steps");ul.textContent="";for(const st of s.steps){ul.append(el("li",st.state,(st.state==="done"?"✓ ":st.state==="on"?"… ":"")+st.name))}
     if(s.error){$("scan").textContent="";$("scan").append(el("h2","","Something went wrong"),el("p","",s.error),el("p","fix","Close this window and run it again. If it keeps happening, tell Claude the message above."));return}
     if(s.view){render(s.view);return}
   }catch(e){}
