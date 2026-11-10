@@ -69,7 +69,7 @@ function render(v){
   const col=v.score==null?"var(--unk)":v.score>=80?"var(--ok)":v.score>=50?"var(--warn)":"var(--bad)";
   const hero=el("div","card hero"),ring=el("div","ring",v.score==null?"?":String(v.score));ring.style.borderColor=col;
   const facts=el("div","facts");
-  for(const [a,b] of [["Computer",v.host],["System",v.os.replace("Microsoft ","").replace(/ 10\.0\.\d+/,"")],["Security updates waiting",v.pending==null?"Could not read":String(v.pending)],["Restart needed",v.reboot?"Yes":"No"]]){
+  for(const [a,b] of [["Computer",v.host],["System",v.os.replace("Microsoft ","").replace(/ 10\.0\.\d+/,"")],["Security updates waiting",v.pending==null?"Could not read":String(v.pending)],["Restart needed",v.reboot==null?"Could not read":v.reboot?"Yes":"No"]]){
     const f=el("div","fact");f.append(el("b","",b),el("span","",a));facts.append(f)}
   hero.append(ring,facts);out.append(hero);
   const groups=[["fail","Needs attention"],["unknown","Could not read"],["pass","Looks good"]];

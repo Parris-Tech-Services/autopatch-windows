@@ -33,6 +33,18 @@ class WindowsAppTests(unittest.TestCase):
         ctx = {"enrolled": True, "in_maintenance_window": True, "backup_taken": True, "rollback_plan": "x"}
         self.assertEqual(app.assess(INV, procs, ctx)["gate"]["decision"], "DENY")
 
+    def test_unreadable_reboot_is_unknown_not_no(self):
+        import device_status
+        doc = app.build_status(dict(INV, reboot_required=None), {}, {"decision": "DENY", "reasons": []}, "windows-ab12cd34", "2026-01-01T00:00:00Z")
+        self.assertIsNone(doc["updates"]["reboot_required"])
+        self.assertEqual(device_status.validate(doc), [])
+        ctx = {"enrolled": True, "in_maintenance_window": True, "backup_taken": True, "rollback_plan": "restore point"}
+        self.assertEqual(app.assess(dict(INV, reboot_required=None), [], ctx)["gate"]["decision"], "DENY")
+
+    def test_pending_total_is_reported_separately(self):
+        doc = app.build_status(dict(INV, updates_pending_total=2, security_updates_pending=0), {}, {"decision": "DENY", "reasons": []}, "windows-ab12cd34", "2026-01-01T00:00:00Z")
+        self.assertEqual((doc["updates"]["pending_security"], doc["updates"]["pending_total"]), (0, 2))
+
     def test_agent_failure_is_error_not_pass(self):
         with self.assertRaises(RuntimeError):
             app.collect_inventory("windows-ab12cd34", fake(code=1))
