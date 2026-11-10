@@ -144,7 +144,11 @@ def apply(policy, status, package, *, approved_inventory=None, apply_change=Fals
     if decision["decision"] != "ALLOW":
         return {"status": "BLOCKED", "reasons": decision["reasons"], "changed": False}
     # A healthy status document alone is not enough: local processes may be active.
-    cmd = ["tasklist", "/fo", "csv", "/nh"] if system == "windows" else ["ps", "-eo", "comm"]
+    # Read full command lines, not only process basenames: JoshRS frequently
+    # runs under node/java and would otherwise be missed by a "comm" check.
+    cmd = (["powershell", "-NoProfile", "-Command",
+            "Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine"]
+           if system == "windows" else ["ps", "-eo", "args"])
     rc, procs = command_runner(cmd)
     if rc != 0 or any(name in procs.lower() for name in BLOCKING):
         return {"status": "BLOCKED_ACTIVE_OR_UNKNOWN_PROCESSES", "changed": False}
