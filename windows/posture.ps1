@@ -19,11 +19,12 @@ $ptype = Try-Get { [int](Get-CimInstance Win32_OperatingSystem).ProductType }
 $smb = Try-Get { (Get-SmbServerConfiguration).EnableSMB1Protocol }
 $uac = Try-Get { (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System").EnableLUA }
 $rdp = Try-Get { (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server").fDenyTSConnections }
-$wg  = $null
+$wg_raw = $null; $wg_exit = $null
 if (Get-Command winget -ErrorAction SilentlyContinue) {
-  $lines = winget upgrade --include-unknown 2>$null | Out-String -Stream
-  $i = ($lines | Select-String -Pattern '^-{5,}' | Select-Object -First 1).LineNumber
-  if ($i) { $wg = @($lines | Select-Object -Skip $i | Where-Object { $_.Trim() -and $_ -notmatch 'upgrades available' }).Count }
+  # Counted in posture.py (tested there). Non-ASCII is replaced 1:1 so columns stay aligned and stdout stays decodable.
+  $wg_raw = (winget upgrade --include-unknown --disable-interactivity 2>$null | Out-String) -replace '[^\x20-\x7E\r\n]', '?'
+  $wg_exit = $LASTEXITCODE
+  if ($wg_raw.Length -gt 30000) { $wg_raw = $wg_raw.Substring(0, 30000) }
 }
 [ordered]@{
   defender_enabled = if ($mp) { [bool]$mp.AntivirusEnabled } else { $null }
@@ -41,5 +42,6 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
   rdp_denied = $rdp
   os_build = $build
   os_product_type = $ptype
-  winget_outdated = $wg
+  winget_raw = $wg_raw
+  winget_exit = $wg_exit
 } | ConvertTo-Json -Compress

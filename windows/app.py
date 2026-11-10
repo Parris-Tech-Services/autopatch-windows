@@ -36,7 +36,7 @@ def resource(frozen_name, source_path):
 AGENT = resource("devices/agent-windows.ps1", ROOT / "devices" / "agent-windows.ps1")
 POSTURE = resource("posture.ps1", Path(__file__).resolve().parent / "posture.ps1")
 MIN_FREE_GB = 10.0
-BASE_VERSION = "0.3.2"
+BASE_VERSION = "0.3.3"
 try:
     from _version import BUILD  # written by the release workflow: "<short commit> <UTC time>"
 except ImportError:

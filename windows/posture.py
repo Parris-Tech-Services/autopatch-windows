@@ -1,6 +1,8 @@
 """Map the raw Windows posture probe into shared-status checks. Pure parsing; unknown is never a pass."""
 from __future__ import annotations
 
+import re
+
 MAX_SIGNATURE_AGE_DAYS = 7
 
 
@@ -67,8 +69,40 @@ def _os_supported(raw):
     return "pass", "Windows version is still supported"
 
 
+_DASHES = re.compile(r"^-{10,}\s*$")
+# winget's own result codes when there is nothing to upgrade (same in every language):
+# 0x8A15002B "no applicable update", 0x8A150014 "no installed package found".
+WINGET_NOTHING = {-1978335189, -1978335212, 0x8A15002B, 0x8A150014}
+
+
+def winget_outdated(raw, exit_code):
+    """Count rows in `winget upgrade` tables without relying on English text. None when it cannot tell."""
+    if not isinstance(raw, str):
+        return None
+    lines = [l.rstrip() for l in re.split(r"\r\n|\n|\r", raw)]
+    found, count = False, 0
+    for i, line in enumerate(lines):
+        if i == 0 or not _DASHES.match(line) or not lines[i - 1].strip():
+            continue
+        found = True
+        header = lines[i - 1]
+        last_col = len(header) - len(header.split()[-1])  # start of the last column (Source)
+        for row in lines[i + 1:]:
+            if row.strip() and len(row) > last_col:  # a footer like "20 upgrades available." is too short
+                count += 1
+            else:
+                break
+    if found:
+        return count
+    if exit_code in WINGET_NOTHING:
+        return 0
+    return None
+
+
 def to_checks(raw):
-    raw = raw or {}
+    raw = dict(raw or {})
+    if "winget_raw" in raw:
+        raw["winget_outdated"] = winget_outdated(raw.get("winget_raw"), raw.get("winget_exit"))
     bl_state, bl_detail = _bitlocker(raw)
     tpm_state, tpm_detail = _tpm(raw)
     age = raw.get("defender_signature_age_days")

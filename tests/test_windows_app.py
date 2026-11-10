@@ -177,6 +177,27 @@ class FallbackHonestyTests(unittest.TestCase):
         self.assertEqual(c["state"], "unknown")
         self.assertIn("usually means BitLocker is off", c["detail"])
 
+    WG = ("   - \r   \\ \r"
+          "Name                Id                   Version  Available Source\n"
+          "------------------------------------------------------------------\n"
+          "Zoom Workplace      Zoom.Zoom            7.2.4855 7.2.5170  winget\n"
+          "Caf? Tool           Some.Tool            1.0      1.1       winget\n"
+          "%s\n")
+
+    def test_winget_counts_rows_in_any_language(self):
+        import posture
+        for footer in ("2 upgrades available.", "2 Aktualisierungen verfuegbar.", ""):
+            self.assertEqual(posture.winget_outdated(self.WG % footer, 0), 2, footer)
+        two_tables = self.WG % "" + "\nThe following packages require explicit targeting:\n" + (self.WG % "").split("\r")[-1]
+        self.assertEqual(posture.winget_outdated(two_tables, 0), 4)
+
+    def test_winget_nothing_to_upgrade_passes_only_on_its_result_code(self):
+        st = lambda raw, code: self.states({"winget_raw": raw, "winget_exit": code})["apps_current"]
+        self.assertEqual(st("No installed package found matching input criteria.", -1978335212), "pass")
+        self.assertEqual(st("Keine Aktualisierung gefunden.", -1978335189), "pass")
+        self.assertEqual(st("Some error", 1), "unknown")
+        self.assertEqual(st(None, None), "unknown")
+
     def test_bitlocker_status_unknown_is_not_a_failure(self):
         self.assertEqual(self.states({"bitlocker_protection": 2})["bitlocker_on"], "unknown")
         self.assertEqual(self.states({"bitlocker_protection": "Unknown"})["bitlocker_on"], "unknown")

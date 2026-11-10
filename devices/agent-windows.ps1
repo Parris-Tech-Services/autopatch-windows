@@ -18,7 +18,9 @@ $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
 $pending = 0
 try {
   $session = New-Object -ComObject Microsoft.Update.Session
-  $pending = ($session.CreateUpdateSearcher().Search("IsInstalled=0 and Type='Software'")).Updates.Count
+  # Only updates in Microsoft's "Security Updates" classification (GUID, so it works in every language).
+  $result = $session.CreateUpdateSearcher().Search("IsInstalled=0 and IsHidden=0 and Type='Software'")
+  $pending = @($result.Updates | Where-Object { @($_.Categories | ForEach-Object { $_.CategoryID }) -contains '0fa1201d-4330-4fa8-8ae9-b877473b6441' }).Count
 } catch { $pending = "unknown" }
 $inventory = [ordered]@{
   device_id                = $DeviceId
