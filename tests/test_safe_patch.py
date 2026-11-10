@@ -42,7 +42,7 @@ def run_case(system, success=True):
     events = []
     def mock_run(cmd):
         events.append(cmd)
-        if cmd[0] in ("ps","tasklist"): return 0, "normal-process"
+        if cmd[0] in ("ps","powershell"): return 0, "normal-process"
         if cmd[0] in ("rpm","winget") and (cmd[0]=="rpm" or cmd[1]=="list"):
             latest = any(c[0]=="dnf" or (c[0]=="winget" and c[1]=="upgrade") for c in events[:-1])
             actual = (new if success else old) if latest else old
