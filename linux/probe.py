@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import time
 import shutil
 import subprocess
 from datetime import date
@@ -12,11 +13,19 @@ PATCHERS = ("dnf5-automatic.timer", "dnf-automatic.timer", "dnf-automatic-instal
 MIN_FREE_GB = 10.0
 
 
-def run_cmd(cmd, timeout=600):
-    """Real runner. A missing tool or a timeout is a non-zero result, not an exception."""
+TIMED_OUT = 124
+T_SLOW = 180  # dnf may need to refresh package lists over a slow network
+T_FAST = 20
+T_CACHE = 60
+
+
+def run_cmd(cmd, timeout=T_FAST):
+    """Real runner. A missing tool is 127, a timeout is 124; neither raises."""
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False, stdin=subprocess.DEVNULL)
         return r.returncode, r.stdout or ""
+    except subprocess.TimeoutExpired:
+        return TIMED_OUT, ""
     except (OSError, subprocess.SubprocessError):
         return 127, ""
 
@@ -52,8 +61,21 @@ def _first_line(rc, out):
     return out.strip().splitlines()[0].strip() if rc == 0 and out.strip() else None
 
 
-def collect(run=run_cmd, read=read_text, free_gb=None):
-    raw = {}
+def collect(run=run_cmd, read=read_text, free_gb=None, progress=None, offline=False):
+    raw = {"timed_out": []}
+
+    def call(label, cmd, timeout=T_FAST):
+        """Run one read-only command, report start and finish, and note a timeout."""
+        if progress:
+            progress("start", label, cmd, None, None)
+        began = time.monotonic()
+        rc, out = run(cmd, timeout)
+        if rc == TIMED_OUT:
+            raw["timed_out"].append(label)
+        if progress:
+            progress("done", label, cmd, rc, round(time.monotonic() - began, 1))
+        return rc, out
+
     osr = parse_os_release(read("/etc/os-release"))
     raw["os_name"] = osr.get("PRETTY_NAME") or "Linux"
     raw["os_id"] = osr.get("ID")
@@ -62,23 +84,29 @@ def collect(run=run_cmd, read=read_text, free_gb=None):
     raw["hostname"] = platform.node()
     raw["is_root"] = hasattr(os, "geteuid") and os.geteuid() == 0
 
-    rc, out = run(["dnf", "-q", "check-update", "--security"])
+    # Offline first: the system's own package cache answers in seconds. Only if there is no usable cache do we
+    # let dnf refresh over the network, which can take minutes on a slow connection.
+    rc, out = call("Checking security updates from the local package cache", ["dnf", "-q", "--cacheonly", "check-update", "--security"], T_CACHE)
     raw["has_dnf"] = rc != 127
+    raw["updates_source"] = "cache"
+    if rc not in (0, 100) and rc != 127 and not offline:
+        raw["updates_source"] = "network"
+        rc, out = call("Checking for security updates (refreshing package lists over the network)", ["dnf", "-q", "check-update", "--security"], T_SLOW)
     raw["security_updates"] = 0 if rc == 0 else count_update_lines(out) if rc == 100 else None
 
-    rc, out = run(["dnf", "needs-restarting", "-r"])
+    rc, out = call("Checking if a restart is needed (dnf)", ["dnf", "needs-restarting", "-r"], T_SLOW)
     raw["reboot_required"] = True if rc == 1 else False if rc == 0 else None
 
-    raw["selinux"] = _first_line(*run(["getenforce"]))
+    raw["selinux"] = _first_line(*call("Reading SELinux mode", ["getenforce"]))
 
-    rc, out = run(["systemctl", "is-active", "firewalld"])
+    rc, out = call("Checking the firewall", ["systemctl", "is-active", "firewalld"])
     if rc == 127:
         raw["firewall_active"] = None
     elif out.strip() == "active":
         raw["firewall_active"] = True
     else:
-        urc, uout = run(["ufw", "status"])
-        frc, _ = run(["firewall-cmd", "--state"])
+        urc, uout = call("Checking ufw", ["ufw", "status"])
+        frc, _ = call("Checking firewall-cmd", ["firewall-cmd", "--state"])
         if urc == 0 and "Status: active" in uout:
             raw["firewall_active"] = True
         elif urc == 127 and frc == 127:
@@ -86,9 +114,9 @@ def collect(run=run_cmd, read=read_text, free_gb=None):
         else:
             raw["firewall_active"] = False
 
-    rc, src = run(["findmnt", "-no", "SOURCE", "/"])
+    rc, src = call("Finding the system disk", ["findmnt", "-no", "SOURCE", "/"])
     if rc == 0 and src.strip():
-        rc2, types = run(["lsblk", "-s", "-nro", "TYPE", src.strip().split("[")[0]])
+        rc2, types = call("Checking disk encryption", ["lsblk", "-s", "-nro", "TYPE", src.strip().split("[")[0]])
         raw["root_encrypted"] = ("crypt" in types.split()) if rc2 == 0 and types.strip() else None
     else:
         raw["root_encrypted"] = None
@@ -96,7 +124,7 @@ def collect(run=run_cmd, read=read_text, free_gb=None):
     if not os.path.isdir("/sys/firmware/efi"):
         raw["secure_boot"] = "legacy-bios"
     else:
-        rc, out = run(["mokutil", "--sb-state"])
+        rc, out = call("Checking Secure Boot", ["mokutil", "--sb-state"])
         if rc == 0 and "enabled" in out.lower():
             raw["secure_boot"] = "on"
         elif rc == 0 and "disabled" in out.lower():
@@ -106,7 +134,7 @@ def collect(run=run_cmd, read=read_text, free_gb=None):
 
     enabled = None
     for unit in PATCHERS:
-        rc, out = run(["systemctl", "is-enabled", unit])
+        rc, out = call("Checking automatic updates (%s)" % unit, ["systemctl", "is-enabled", unit])
         if rc == 127:
             break
         if out.strip() == "enabled":
@@ -140,7 +168,9 @@ def to_checks(raw, today=None):
         ("os_supported", "high", "unknown" if eol is None else ("pass" if eol >= today else "fail"),
          "Support ends %s" % end if eol else "This release does not say when its support ends"),
         ("security_updates", "high", _st(n, lambda v: v == 0),
-         "%s security updates waiting" % n if n is not None else ("dnf not found: only Fedora-family updates are checked for now" if raw.get("has_dnf") is False else "could not check")),
+         ("%s security updates waiting" % n if n else "No security updates waiting") + (" (from this computer's package cache)" if raw.get("updates_source") == "cache" else "") if n is not None else (
+             "dnf not found: only Fedora-family updates are checked for now" if raw.get("has_dnf") is False else
+             "timed out after %d s (slow network, or another package tool is running?)" % T_SLOW if any("security updates" in t for t in raw.get("timed_out", [])) else "could not check")),
         ("reboot_ok", "medium", _st(raw.get("reboot_required"), lambda v: not v),
          "could not check" if raw.get("reboot_required") is None else "A restart is needed to finish updates" if raw.get("reboot_required") else "No restart needed"),
         ("firewall_on", "high", _st(raw.get("firewall_active"), bool),
