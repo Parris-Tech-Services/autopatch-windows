@@ -32,6 +32,10 @@ python recovery_drill.py --owned-personal-device --original path/to/safe-test-fi
 
 **Do not enable unattended patching yet:** Current Cloudflare registration remains owner-unverified; no personally owned machine has a tested system rollback and independently verified post-patch CVE scan. Before any household pilot, require owner-approved enrolment, actual system recovery/restore test, bounded package allowlist and maintenance window, independent running-version/advisory verification, and no changes to work, school or client PCs. The private `JoshDashboard4/security/autopatch-ai/` repository owns the end-to-end evidence lifecycle; this public app must not create a competing controller or expose private device data.
 
+## Automatic source-code vulnerability research
+
+The [CodeQL security workflow](.github/workflows/source-security-codeql.yml) analyses this owned public repository's Python and JavaScript/Cloudflare code on pushes and pull requests, using GitHub's open-source code scanning. It searches for suspicious first-party source patterns that dependency scanners do not cover. Results appear under GitHub **Security → Code scanning**; they are research findings until validated, **not automatically confirmed zero-days**, and the workflow never updates devices or merges PRs. The private JoshDashboard4 AutoPatch coordinator owns the broader discovery-to-deployment lifecycle.
+
 ## Fedora / Linux
 
 Read-only check for a Fedora-family computer. Needs only the python3 that Fedora already has. One line in a terminal:
