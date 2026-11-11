@@ -7,9 +7,14 @@ from urllib.request import urlopen
 from urllib.error import HTTPError
 
 BASE="https://autopatch-cloud-enrolment.parris-neathaustralia.workers.dev"
-with urlopen(BASE+"/healthz",timeout=20) as response:
-    assert response.status==200
-    health=json.load(response)
+try:
+    with urlopen(BASE+"/healthz",timeout=20) as response:
+        assert response.status==200
+        health=json.load(response)
+except HTTPError as exc:
+    print("Cloud HTTP status:",exc.code,"server:",exc.headers.get("Server"),
+          "ray:",exc.headers.get("CF-Ray"),"body:",exc.read(600).decode("utf8","replace"))
+    raise
 assert health["status"]=="ok",health
 assert health["service"]=="autopatch-cloud",health
 assert health["patching_enabled"] is False,health
