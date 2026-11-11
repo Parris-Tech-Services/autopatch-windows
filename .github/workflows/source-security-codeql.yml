@@ -1,0 +1,39 @@
+name: AutoPatch source-code security research (CodeQL)
+
+# Code analysis for first-party Python and Cloudflare JavaScript source.
+# No remote exploitation, paid model API, code execution on devices or patches.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyse:
+    name: CodeQL ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['python', 'javascript-typescript']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Initialise source security analysis
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+          build-mode: none
+      - name: Analyse and upload research candidates to GitHub code scanning
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
