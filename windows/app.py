@@ -25,6 +25,7 @@ import os_update_gate  # noqa: E402
 import posture  # noqa: E402
 import ui  # noqa: E402
 import enrolment  # noqa: E402
+import cloud_enrol  # noqa: E402
 
 
 
@@ -37,7 +38,7 @@ def resource(frozen_name, source_path):
 AGENT = resource("devices/agent-windows.ps1", ROOT / "devices" / "agent-windows.ps1")
 POSTURE = resource("posture.ps1", Path(__file__).resolve().parent / "posture.ps1")
 MIN_FREE_GB = 10.0
-BASE_VERSION = "0.4.0"
+BASE_VERSION = "0.5.0"
 try:
     from _version import BUILD  # written by the release workflow: "<short commit> <UTC time>"
 except ImportError:
@@ -179,8 +180,9 @@ def serve(scan, port):
     # The wizard shares the same loopback UI, but intentionally has no ability
     # to enable OS or app patching. Phone-side approval remains separate.
     owner_enrol = enrolment.LocalEnrolment(scan.device_id, collect_inventory)
+    cloud = cloud_enrol.CloudEnrolment(scan.device_id)
     return server.serve(scan, port, ui.page("Windows Update"), launch_elevated,
-                        on_enrol=owner_enrol)
+                        on_enrol=owner_enrol, on_cloud=cloud)
 
 
 def main(argv=None):
@@ -207,8 +209,8 @@ def main(argv=None):
     print("AutoPatch for Windows  version %s" % VERSION)
     print("--------------------------------------------")
     print("Opening %s in your browser. The scan runs there and can take a minute or two." % url)
-    print("Security scan is read-only. Optional enrolment saves a local approval record; no patches. Close to stop.")
-    print("Enrolment wizard: %s/#enrol" % url)
+    print("Security scan is read-only. Cloud enrolment sends a minimal device identity on click; no patches. Close to stop.")
+    print("One-click cloud enrolment: %s/#enrol" % url)
     # The server must be answering before anything else can go wrong, so it runs in its own thread
     # and neither the scan nor a slow browser launch can keep it from starting.
     threading.Thread(target=server.serve_forever, daemon=True).start()

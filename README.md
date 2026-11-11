@@ -1,6 +1,6 @@
 # AutoPatch for Windows
 
-Security posture scan for a Windows PC, with an optional owner-controlled **read-only enrolment wizard**. The scanner does not change Windows settings, install updates or restart. The optional wizard saves a locally imported approval record in the user's Windows profile. Everything listens on this PC only.
+Security posture scan for a Windows PC, with an optional **one-click cloud registration button**. The scanner does not change Windows settings, install updates or restart. The button connects to your Cloudflare-hosted read-only registration service and stores a private device credential in your Windows user profile. Everything listens on this PC only.
 
 **Download (no sign-in):** https://github.com/Parris-Tech-Services/autopatch-windows/releases/latest/download/autopatch-windows.exe
 
@@ -14,18 +14,17 @@ The source checkout also includes an [offline verification pipeline](VERIFICATIO
 
 These are separate developer tools, not new capabilities in the downloaded UI app. A successful fixture reports `FIXTURE_VERIFIED`, not a real CVE fix. Production collectors, independently provisioned trust, an approved deployment adapter and actual runtime evidence are still required; the existing app, enrollment and OS-update boundaries remain unchanged.
 
-## Enrol this personal PC — built into the app (v0.4)
+## One-click cloud enrolment (Windows v0.5)
 
-After opening `autopatch-windows.exe`, choose **Enrol this PC**, or open
-[the local enrolment wizard](http://127.0.0.1:8765/#enrol) while the app runs.
+1. [Download AutoPatch Windows](https://github.com/Parris-Tech-Services/autopatch-windows/releases/latest/download/autopatch-windows.exe) and open it on **a personal PC you own and are authorised to manage**.
+2. Click **Enrol this PC**. That's it. No phone, Termux, manual command, or file.
+3. AutoPatch connects to [AutoPatch Cloud](https://autopatch-cloud-enrolment.parris-neathaustralia.workers.dev/) over HTTPS and saves a unique, randomly generated device credential under your user profile.
 
-1. Tick the confirmation that **you personally own this PC** (not work, school or client managed), then click **Download enrolment file**. The app collects the existing read-only inventory and downloads a JSON file. No Windows configuration is changed.
-2. Follow the wizard's phone commands. On your trusted Android/Termux AutoPatch installation, create the matching one-time invitation, privately transfer the inventory, approve it there and export `approved-device.json`. Do **not** share invitation tokens or the private phone key.
-3. Move `approved-device.json` back to this computer and use **Import approval**. The wizard checks the device ID and hostname and saves a minimal local record under the Windows user's AutoPatch folder.
+The device becomes **cloud-registered, but not owner-verified**. It sends only the machine's device ID, hostname and Windows device class during enrolment. Credentials are hashed by the cloud service; the original credential stays local. The registration is not a patching, command execution, remote control, background monitoring, or restart permission. The app remains read-only.
 
-**This is deliberately not zero-trust one-click cloud enrolment.** The phone remains the authority. A returned JSON receipt cannot be cryptographically verified by this version of the Windows app; its status explicitly says so. Importing it **does not** enable automatic patching, remote control, scheduled tasks or elevated privileges. A future signed-approval or secure local-pairing service is needed for fully hands-off verified enrolment.
+**Important:** An authenticated fleet dashboard is **not yet enabled**, because Cloudflare Access is not configured on this account. Registration is not a claim that any central operator has approved the PC or that unattended patching has begun. Work/school/customer computers should only be enrolled with their administrator's authorisation. The legacy phone approval workflow is deprecated, not required for this button.
 
-The [full enrolment guide](PATCH_ENROLMENT.md) describes the same workflow and the separate optional package patch runner. Never enrol work/customer devices without the relevant administrator's approval.
+The [short enrolment guide](PATCH_ENROLMENT.md) explains the one-click flow and current limits.
 
 ## Fedora / Linux
 

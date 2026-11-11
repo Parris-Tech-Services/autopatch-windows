@@ -41,7 +41,7 @@ def enrolment_origin_ok(headers, port):
     return headers.get("Content-Type", "").split(";")[0].strip().lower() == "application/json"
 
 
-def serve(scan, port, page_html, on_elevate=None, on_enrol=None):
+def serve(scan, port, page_html, on_elevate=None, on_enrol=None, on_cloud=None):
     """Bind exclusively to localhost and return a ThreadingHTTPServer."""
     class H(BaseHTTPRequestHandler):
         def reply(self, status, body, kind="application/json"):
@@ -69,6 +69,8 @@ def serve(scan, port, page_html, on_elevate=None, on_enrol=None):
                 self.reply(200, getattr(scan, "status", {}))
             elif self.path == "/api/enrol" and on_enrol is not None:
                 self.reply(200, on_enrol.state())
+            elif self.path == "/api/cloud" and on_cloud is not None:
+                self.reply(200, on_cloud.state())
             elif self.path in ("/", "/index.html"):
                 self.reply(200, page_html, "text/html; charset=utf-8")
             else:
@@ -89,10 +91,12 @@ def serve(scan, port, page_html, on_elevate=None, on_enrol=None):
                 threading.Thread(target=ask, daemon=True).start()
                 self.reply(200, {"asked": True})
                 return
-            if self.path not in ("/api/enrol/request", "/api/enrol/import"):
+            if self.path not in ("/api/enrol/request", "/api/enrol/import", "/api/cloud/enrol"):
                 self.reply(404, {"error": "Unknown path"})
                 return
-            if on_enrol is None or not enrolment_origin_ok(self.headers, port):
+            if ((self.path == "/api/cloud/enrol" and on_cloud is None) or
+                    (self.path != "/api/cloud/enrol" and on_enrol is None) or
+                    not enrolment_origin_ok(self.headers, port)):
                 self.reply(403, {"error": "Only this app's own page can enrol devices"})
                 return
             try:
@@ -104,8 +108,11 @@ def serve(scan, port, page_html, on_elevate=None, on_enrol=None):
                 return
             try:
                 payload = json.loads(self.rfile.read(length))
-                result = (on_enrol.prepare(payload) if self.path == "/api/enrol/request"
-                          else on_enrol.import_receipt(payload))
+                if self.path == "/api/cloud/enrol":
+                    result = on_cloud.enrol(payload)
+                else:
+                    result = (on_enrol.prepare(payload) if self.path == "/api/enrol/request"
+                              else on_enrol.import_receipt(payload))
             except (ValueError, TypeError, OSError, RuntimeError) as exc:
                 self.reply(422, {"error": str(exc)[:200]})
                 return
