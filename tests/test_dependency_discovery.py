@@ -61,6 +61,11 @@ class DiscoveryTests(unittest.TestCase):
         item["affected"][0]["ranges"][0]["type"] = "ECOSYSTEM"
         self.assertIsNone(dd.advisory_match("fixture", "1.0.0", item))
 
+    def test_malformed_version_list_is_not_negative_proof(self):
+        item = record()
+        item["affected"][0].update(ranges=[], versions=[{"invalid": "1.0.0"}])
+        self.assertIsNone(dd.advisory_match("fixture", "2.0.0", item))
+
     def test_exact_version_list(self):
         item = record()
         item["affected"][0].update(ranges=[], versions=["1.0.0"])

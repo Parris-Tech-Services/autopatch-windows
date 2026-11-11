@@ -65,7 +65,8 @@ def advisory_match(name, installed, record):
         if package.get("ecosystem") != "npm" or package.get("name") != name:
             continue
         versions, ranges = entry.get("versions", []), entry.get("ranges", [])
-        if not isinstance(versions, list) or not isinstance(ranges, list):
+        if not isinstance(versions, list) or not isinstance(ranges, list) or not all(
+                isinstance(item, str) for item in versions):
             return None
         parsed = version(installed)
         if installed in versions or (parsed is not None and any(

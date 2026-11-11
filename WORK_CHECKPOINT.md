@@ -19,7 +19,7 @@ Date: 11 November 2026. Classification: PUBLIC, implementation summary only.
 ## Local evidence
 
 - Baseline: 69 existing tests passed before edits.
-- Current: 115 tests passed with `python -m unittest discover -s tests -q`.
+- Current: 116 tests passed with `python -m unittest discover -s tests -q`.
 - Python compilation and `git diff --check` passed.
 - Original `device_status.py`, `safe_patch.py`, `os_update_gate.py`, UI/apps, and
   release workflow are unchanged.
@@ -27,6 +27,8 @@ Date: 11 November 2026. Classification: PUBLIC, implementation summary only.
   restored baseline and observed candidate digests matched their expected values.
 - Existing tests emit resource warnings on the local Python version; these were
   also present in the baseline run and were not suppressed or reclassified.
+- Review reproduced a malformed OSV version-list negative-classification defect
+  with a failing test; the matcher now returns unknown for that malformed input.
 
 ## Honest limits
 
