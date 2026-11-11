@@ -94,5 +94,70 @@ class CloudUnitTests(unittest.TestCase):
            "https://autopatch-cloud-enrolment.parris-neathaustralia.workers.dev")
         self.assertTrue(self.client.state()["dashboard_url"].startswith("https://"))
 
+
+class CloudServerTests(unittest.TestCase):
+    def setUp(self):
+        import server
+        import socket
+        import threading
+        from urllib.request import urlopen, Request
+        self.server=server
+        self.urlopen=urlopen
+        self.Request=Request
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        store=Path(self.tmp.name)/"test-cloud.json"
+        def transport(method,path,*,payload=None,device_id=None,credential=None):
+            return {"status":"CLOUD_REGISTERED_UNVERIFIED","device_id":ID,
+                    "owner_verified":False,"auto_patch":False,"remote_control":False}
+        cloud=cloud_enrol.CloudEnrolment(ID,hostname=HOST,store=store,transport=transport)
+        class Scan:
+            status={"schema_version":1}
+            def state(self):return {"view":None}
+        sock=socket.socket()
+        sock.bind(("127.0.0.1",0))
+        self.port=sock.getsockname()[1]
+        sock.close()
+        self.http=server.serve(Scan(),self.port,"<h1>Test</h1>",on_cloud=cloud)
+        thread=threading.Thread(target=self.http.serve_forever,daemon=True)
+        thread.start()
+        self.addCleanup(self.http.server_close)
+        self.addCleanup(self.http.shutdown)
+
+    def call(self,path,payload=None,origin=True):
+        from urllib.error import HTTPError
+        headers={}
+        if payload is not None:
+            headers["Content-Type"]="application/json"
+            if origin:headers["Origin"]=f"http://127.0.0.1:{self.port}"
+            headers["Sec-Fetch-Site"]="same-origin"
+        req=self.Request(f"http://127.0.0.1:{self.port}{path}",
+                         method="POST" if payload is not None else "GET",
+                         data=None if payload is None else json.dumps(payload).encode("utf8"),
+                         headers=headers)
+        try:
+            with self.urlopen(req,timeout=10) as res:
+                return res.status,json.loads(res.read())
+        except HTTPError as res:
+            try:return res.code,json.loads(res.read())
+            finally:res.close()
+
+    def test_cloud_button_one_click_is_read_only(self):
+        status,state=self.call("/api/cloud")
+        self.assertEqual(status,200)
+        self.assertEqual(state["status"],"NOT_CLOUD_REGISTERED")
+        code,result=self.call("/api/cloud/enrol",{"confirmed_personal":True})
+        self.assertEqual(code,200)
+        self.assertEqual(result["status"],"CLOUD_REGISTERED_UNVERIFIED")
+        self.assertFalse(result["patching_enabled"])
+        self.assertFalse(result["owner_verified"])
+        self.assertFalse(result["remote_control"])
+
+    def test_cross_site_enrol_rejected(self):
+        code,_=self.call("/api/cloud/enrol",{"confirmed_personal":True},origin=False)
+        self.assertEqual(code,403)
+        code,_=self.call("/api/cloud/enrol",{"confirmed_personal":False})
+        self.assertEqual(code,422)
+
 if __name__=="__main__":
     unittest.main()
