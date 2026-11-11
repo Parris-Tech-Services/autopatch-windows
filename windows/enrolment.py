@@ -1,9 +1,11 @@
-"""Owner-initiated, read-only Windows enrolment for the existing local AutoPatch UI.
+"""One-click local read-only opt-in for the Windows AutoPatch UI.
 
-The phone authority remains the source of truth. This client NEVER enrols itself
-in that authority. It prepares the inventory for owner approval, and stores a
-locally imported read-only receipt. No remote service, auto patch, restart, or
-privilege change. Imported receipts are not cryptographically authenticated.
+The owner can opt in locally with a single click, without a phone, file transfer
+or command line. It stores only a local read-only acknowledgement in the user's
+profile; it DOES NOT enrol the machine in any remote fleet or authorise patching.
+
+An optional legacy phone-authority file workflow remains available to advanced
+users. No remote service, unattended updates, restart or privilege change.
 """
 from __future__ import annotations
 
@@ -24,6 +26,10 @@ ALLOWED_INVENTORY = {
 ALLOWED_RECEIPT = {
     "device_id", "device_class", "hostname", "status", "permissions",
     "auto_patch", "remote_control", "enrolled_utc",
+}
+LOCAL_RECORD_FIELDS = {
+    "schema_version", "kind", "device_id", "device_class", "hostname",
+    "permissions", "auto_patch", "remote_control", "enrolled_utc",
 }
 
 
@@ -65,13 +71,78 @@ class LocalEnrolment:
             "device_id": self.device_id, "device_class": "windows",
             "hostname": self.hostname, "status": "NOT_ENROLLED",
             "patching_enabled": False, "approval_verified": False,
+            "fleet_connected": False, "monitoring_mode": "on_launch_only",
         }
         try:
             receipt = json.loads(self.store.read_text(encoding="utf-8"))
+            if isinstance(receipt, dict) and receipt.get("kind") == "local_readonly":
+                self.validate_local_record(receipt)
+                return dict(base, status="ENROLLED_ON_THIS_PC", enrolled_utc=receipt["enrolled_utc"])
             self.validate_receipt(receipt)
+            return dict(base, status="LOCAL_RECEIPT_IMPORTED", enrolled_utc=receipt["enrolled_utc"])
         except (OSError, ValueError, TypeError):
             return base
-        return dict(base, status="LOCAL_RECEIPT_IMPORTED", enrolled_utc=receipt["enrolled_utc"])
+
+    def validate_local_record(self, record: dict) -> None:
+        if not isinstance(record, dict) or set(record) != LOCAL_RECORD_FIELDS:
+            raise EnrolmentError("Invalid local enrolment fields")
+        if record["schema_version"] != 1 or record["kind"] != "local_readonly":
+            raise EnrolmentError("Unsupported local enrolment format")
+        if record["device_id"] != self.device_id or record["device_class"] != "windows":
+            raise EnrolmentError("Local enrolment belongs to another computer")
+        if not isinstance(record["hostname"], str) or record["hostname"].casefold() != self.hostname.casefold():
+            raise EnrolmentError("Local enrolment hostname does not match")
+        if (record["permissions"] != ["inventory_read"] or record["auto_patch"] is not False
+                or record["remote_control"] is not False):
+            raise EnrolmentError("Local enrolment cannot grant patching or remote access")
+        if utc_time(record["enrolled_utc"]) > datetime.now(timezone.utc) + timedelta(minutes=5):
+            raise EnrolmentError("Local enrolment timestamp is in the future")
+
+    def _save_record(self, record: dict) -> None:
+        self.store.parent.mkdir(parents=True, exist_ok=True)
+        tmp: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self.store.parent,
+                prefix="autopatch-enrol-", suffix=".tmp", delete=False,
+            ) as handle:
+                tmp = Path(handle.name)
+                json.dump(record, handle, sort_keys=True)
+                handle.write("\n")
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self.store)
+        finally:
+            if tmp is not None and tmp.exists():
+                tmp.unlink()
+
+    def enrol_local(self, payload: dict) -> dict:
+        """One explicit local click; instant and independent of the slow Windows Update scan."""
+        if not isinstance(payload, dict) or set(payload) != {"confirmed_personal"}:
+            raise EnrolmentError("Invalid local enrolment request")
+        if payload.get("confirmed_personal") is not True:
+            raise EnrolmentError("Only enrol a personal PC you are authorised to manage")
+        existing = self.state()
+        if existing["status"] != "NOT_ENROLLED":
+            return existing
+        record = {
+            "schema_version": 1, "kind": "local_readonly",
+            "device_id": self.device_id, "device_class": "windows",
+            "hostname": self.hostname, "permissions": ["inventory_read"],
+            "auto_patch": False, "remote_control": False,
+            "enrolled_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        self.validate_local_record(record)
+        self._save_record(record)
+        return self.state()
+
+    def remove_local(self, payload: dict) -> dict:
+        """Remove only this user's local record; cannot change the phone authority."""
+        if not isinstance(payload, dict) or payload != {"confirmed_remove": True}:
+            raise EnrolmentError("Explicit removal confirmation required")
+        if self.state()["status"] == "NOT_ENROLLED":
+            return self.state()
+        self.store.unlink(missing_ok=True)
+        return self.state()
 
     def prepare(self, payload: dict) -> dict:
         if not isinstance(payload, dict) or set(payload) != {"confirmed_personal"}:
@@ -121,21 +192,6 @@ class LocalEnrolment:
             raise EnrolmentError("Personal ownership confirmation required")
         receipt = payload.get("receipt")
         self.validate_receipt(receipt)
-        self.store.parent.mkdir(parents=True, exist_ok=True)
-        tmp: Path | None = None
-        try:
-            # User-local storage only; Windows profile ACL applies. No phone key,
-            # token or entire fleet registry is copied to this computer.
-            with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=self.store.parent,
-                prefix="autopatch-approval-", suffix=".tmp", delete=False,
-            ) as handle:
-                tmp = Path(handle.name)
-                json.dump(receipt, handle, sort_keys=True)
-                handle.write("\n")
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, self.store)
-        finally:
-            if tmp is not None and tmp.exists():
-                tmp.unlink()
+        # Import remains a local acknowledgement, not signed remote authority.
+        self._save_record(receipt)
         return self.state()
