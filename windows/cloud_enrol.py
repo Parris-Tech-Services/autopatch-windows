@@ -107,7 +107,8 @@ class CloudEnrolment:
                 "last_registered_utc": record.get("registered_utc") if record else None}
 
     def enrol(self, payload: dict):
-        if (not isinstance(payload, dict) or set(payload) != {"confirmed_personal"}\n                or payload["confirmed_personal"] is not True):
+        if (not isinstance(payload, dict) or set(payload) != {"confirmed_personal"}
+                or payload["confirmed_personal"] is not True):
             raise CloudError("You must explicitly confirm this is an authorised personal PC")
         if not HOST.fullmatch(self.hostname):
             raise CloudError("Computer hostname is invalid for cloud enrolment")
