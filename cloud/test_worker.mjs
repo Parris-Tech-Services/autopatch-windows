@@ -12,6 +12,15 @@ class D1 {
     const db = this;
     return {
       async first() { return this.bind().first(); },
+      async all() {
+        if (sql.includes('FROM device_registrations ORDER BY created_utc DESC LIMIT 200')) {
+          return { results: Array.from(db.devices.values()).map(d=>({
+            device_id:d.device_id,hostname:d.hostname,device_class:'windows',
+            registration_state:d.registration_state,created_utc:d.created_utc,last_seen_utc:d.last_seen_utc
+          })).slice(0,200) };
+        }
+        throw Error('Unhandled all query: '+sql);
+      },
       bind(...values) {
         return {
           async first() {
@@ -63,8 +72,8 @@ const request = (path, method='GET', payload, extra={}) => {
   if (payload) {headers['Content-Type']='application/json'; body=JSON.stringify(payload);}
   return new Request(base+path,{method,headers,body});
 };
-const call = (db,path,method='GET',payload,extra={}) =>
-  worker.fetch(request(path,method,payload,extra),{DB:db});
+const call = (db,path,method='GET',payload,extra={},ctx,ownerEmail) =>
+  worker.fetch(request(path,method,payload,extra),{DB:db,OWNER_EMAIL:ownerEmail},ctx);
 
 test('cloud health and public docs do not expose admin access', async () => {
   const db=new D1();
@@ -141,4 +150,58 @@ test('registration rate limit blocks after 20 new registrations per source IP',a
   const extra=await call(db,'/v1/enrol','POST',{...data,device_id:'windows-extra999'});
   assert.equal(extra.status,429);
   assert.equal(db.devices.size,20);
+});
+
+test('dashboard fails closed without Access identity and owner secret',async()=>{
+  const db=new D1();
+  await call(db,'/v1/enrol','POST',data);
+  const trusted={access:{getIdentity:async()=>({email:'owner@example.test'})}};
+  for(const path of ['/dashboard','/v1/admin/devices']){
+    let r=await call(db,path);
+    assert.equal(r.status,403);
+    r=await call(db,path,'GET',undefined,{},trusted);
+    assert.equal(r.status,403,'without owner secret must fail closed');
+    r=await call(db,path,'GET',undefined,{},trusted,'someoneelse@example.test');
+    assert.equal(r.status,403,'wrong owner email must fail closed');
+    const forged={'Cf-Access-Jwt-Assertion':'forged','Cf-Access-Authenticated-User-Email':'owner@example.test'};
+    r=await call(db,path,'GET',undefined,forged,undefined,'owner@example.test');
+    assert.equal(r.status,403,'untrusted request headers must never authorise');
+  }
+});
+
+test('verified Access owner sees read-only fleet without credential hashes',async()=>{
+  const db=new D1();
+  await call(db,'/v1/enrol','POST',data);
+  const context={access:{getIdentity:async()=>({email:'owner@example.test'})}};
+  let r=await call(db,'/dashboard','GET',undefined,{},context,'owner@example.test');
+  assert.equal(r.status,200);
+  assert.match(r.headers.get('Content-Security-Policy'),/default-src 'none'/);
+  assert.match(r.headers.get('Cache-Control'),/no-store/);
+  const page=await r.text();
+  assert.match(page,/PERSONAL-DESKTOP/);
+  assert.match(page,/Automatic patching/);
+  assert.match(page,/Off/);
+  assert.doesNotMatch(page,/credential_sha256/);
+  assert.doesNotMatch(page,/X{48}/);
+  r=await call(db,'/v1/admin/devices','GET',undefined,{},context,'owner@example.test');
+  assert.equal(r.status,200);
+  const data=await r.json();
+  assert.equal(data.count,1);
+  assert.equal(data.patching_enabled,false);
+  assert.equal(data.devices[0].registration_state,'unverified');
+  assert.equal('credential_sha256' in data.devices[0],false);
+});
+
+test('unsafe hostnames are escaped in private dashboard',async()=>{
+  const db=new D1();
+  db.devices.set('windows-safe',{device_id:'windows-safe',hostname:'<script>alert(1)</script>',
+    registration_state:'unverified',created_utc:'2026-11-11',last_seen_utc:'2026-11-11',
+    credential_sha256:'stored-secret'});
+  const ctx={access:{getIdentity:async()=>({email:'owner@example.test'})}};
+  const response=await call(db,'/dashboard','GET',undefined,{},ctx,'owner@example.test');
+  assert.equal(response.status,200);
+  const html=await response.text();
+  assert.match(html,/&lt;script&gt;/);
+  assert.doesNotMatch(html,/<script>alert/);
+  assert.doesNotMatch(html,/stored-secret/);
 });
