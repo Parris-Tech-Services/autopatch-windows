@@ -3,7 +3,7 @@
  * authorisation, automatic patching, unattended execution or remote access.
  * Device credentials are random and hashed server-side. No global device list.
  */
-const VERSION = "2026-11-11-cloud-v1";
+const VERSION = "2026-11-11-cloud-v2";
 const ID = /^[a-z0-9][a-z0-9-]{2,63}$/;
 const HOST = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const TOKEN = /^[A-Za-z0-9_-]{40,100}$/;
@@ -32,9 +32,68 @@ p{color:#aec0d8}a{color:#91b8ff}small{color:#91a6c3}
 <h1>AutoPatch Cloud</h1><p>Your personal device registration service, hosted on Cloudflare.</p>
 <h2>Enrol a Windows PC</h2><p>Open the latest AutoPatch Windows app on your own PC, confirm ownership and select <b>Enrol this PC</b>. No phone, Termux or JSON file transfers.</p>
 <h2>Safety comes first</h2><p>Device registration is read-only and unverified. It does not start automatic updates, remote access or restarts.</p>
-<h2>Dashboard access</h2><p>The private fleet dashboard is not enabled yet. Owner authentication through Cloudflare Access must be configured before any shared device list or patch approvals are available.</p>
+<h2>Dashboard access</h2><p><a href="/dashboard">Sign in to your private dashboard</a></p><p>The private, read-only device dashboard is protected by Cloudflare Access and restricted to the account owner.</p>
 <p><a href="https://github.com/Parris-Tech-Services/autopatch-windows/releases/latest">Download AutoPatch Windows</a></p>
 <small>AutoPatch Cloud v1 · No remote commands or patch endpoint</small></div></main></body></html>`;
+
+const htmlHeaders = {
+  "Content-Type":"text/html; charset=utf-8",
+  "Cache-Control":"no-store, private",
+  "Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+  "X-Content-Type-Options":"nosniff",
+  "Referrer-Policy":"no-referrer"
+};
+const esc = value => String(value??"").replace(/[&<>"']/g, ch=>({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+})[ch]);
+const dashboardPage = (rows, identity) => {
+  const active=rows.filter(x=>x.registration_state==="unverified").length;
+  const markup=rows.map(d=>`<tr><td><strong>${esc(d.hostname)}</strong><span class="muted">${esc(d.device_id)}</span></td>
+<td>${esc(d.device_class)}</td><td>${d.registration_state==="revoked"?"Revoked":"Registered · unverified"}</td>
+<td>${esc(d.last_seen_utc||"Unknown")} UTC</td></tr>`).join("");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoPatch Cloud — Devices</title><style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{background:#0d1423;color:#ebf2ff;margin:0;font:15px/1.6 system-ui,Segoe UI,Arial,sans-serif}
+main{width:min(1060px,100%);margin:auto;padding:32px 22px}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between}
+h1{font-size:clamp(1.65rem,4vw,2.3rem);letter-spacing:-.04em;margin:.2em 0}
+h2{font-size:1.15rem;margin:0 0 14px}p,.muted{color:#aabdd5}
+.card{background:#172338;border:1px solid #32455f;border-radius:18px;padding:22px;margin:20px 0}
+.metrics{display:flex;gap:14px;flex-wrap:wrap}.metric{flex:1 1 170px}
+.big{font-size:2.25rem;font-weight:750;display:block;line-height:1.1}
+.tag{border-radius:99px;padding:4px 10px;background:#21453c;color:#96e4c0;font-size:12px}
+table{border-collapse:collapse;width:100%;text-align:left;min-width:580px}
+th,td{padding:12px 14px;border-bottom:1px solid #32455f;vertical-align:top}th{color:#b3c2d7;font-weight:600}
+td .muted{display:block;font-size:12px;word-break:break-all}
+.scroll{overflow-x:auto}a{color:#99c2ff;text-decoration:none}a:hover{text-decoration:underline}
+small{color:#aabdd5} .notice{border-left:3px solid #d7b96b;padding-left:14px}
+</style></head><body><main><header><div><span class="tag">Private dashboard</span><h1>AutoPatch Cloud</h1></div>
+<div><small>Signed in with Cloudflare Access</small><div><a href="/cdn-cgi/access/logout">Sign out</a></div></div></header>
+<p>Personal device inventory · ${esc(identity.email)}</p>
+<section class="metrics"><div class="card metric"><small>Registered devices</small><span class="big">${rows.length}</span></div>
+<div class="card metric"><small>Unverified devices</small><span class="big">${active}</span></div>
+<div class="card metric"><small>Automatic patching</small><span class="big">Off</span></div></section>
+<section class="card"><h2>Your registered devices</h2>
+${rows.length?`<div class="scroll"><table><thead><tr><th>Computer</th><th>Type</th><th>Trust state</th><th>Last contact</th></tr></thead><tbody>${markup}</tbody></table></div>`:
+`<p>No computers registered yet. Install AutoPatch for Windows and select <strong>Enrol this PC</strong>.</p>`}
+<p class="notice">Registrations are not yet verified as yours. A registered device cannot receive patches or remote commands. Do not treat this as a verified security posture report.</p></section>
+<p><a href="https://github.com/Parris-Tech-Services/autopatch-windows/releases/latest">Download the Windows app</a> · <a href="/healthz">Service health</a></p>
+<small>Read-only preview · No unattended patching · No public device listing</small></main></body></html>`;
+};
+async function adminIdentity(env, ctx) {
+  // Access policy protects the URL before it reaches this Worker. Defense in
+  // depth: require Cloudflare-verified identity AND a separately bound owner
+  // email secret, never trust a client-supplied header or query parameter.
+  if(!ctx?.access?.getIdentity || !env.OWNER_EMAIL)return null;
+  try {
+    const person=await ctx.access.getIdentity();
+    if(person && typeof person.email==="string" &&
+       person.email.toLowerCase()===env.OWNER_EMAIL.toLowerCase())return person;
+  }catch(_){}
+  return null;
+}
+
 async function readJson(request) {
   const contentType=(request.headers.get("Content-Type")||"").split(";")[0].toLowerCase();
   if(contentType!=="application/json")throw new Error("JSON required");
@@ -55,13 +114,25 @@ async function auth(request, env) {
   return row||null;
 }
 export default {
-  async fetch(request,env) {
+  async fetch(request,env,ctx) {
     const u=new URL(request.url);
     if(!env.DB)return err("Cloud database not configured",503);
     if(request.method==="GET"&&(u.pathname==="/"||u.pathname==="/index.html"))
       return new Response(html,{headers:{"Content-Type":"text/html; charset=utf-8",
         "Cache-Control":"no-store", "Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         "X-Content-Type-Options":"nosniff", "Referrer-Policy":"no-referrer"}});
+    if(request.method==="GET"&&(u.pathname==="/dashboard"||u.pathname==="/v1/admin/devices")){
+      const identity=await adminIdentity(env,ctx);
+      if(!identity)return err("Cloudflare Access owner authentication required",403);
+      try {
+        const result=await env.DB.prepare(
+          "SELECT device_id,hostname,device_class,registration_state,created_utc,last_seen_utc FROM device_registrations ORDER BY created_utc DESC LIMIT 200"
+        ).all();
+        const rows=result.results||[];
+        if(u.pathname==="/v1/admin/devices")return json({devices:rows,count:rows.length,owner_verified_for_dashboard:true,patching_enabled:false});
+        return new Response(dashboardPage(rows,identity),{headers:htmlHeaders});
+      }catch(_){return err("Could not read the device inventory",503)}
+    }
     if(request.method==="GET"&&u.pathname==="/healthz")
       return json({status:"ok",service:"autopatch-cloud",version:VERSION,patching_enabled:false});
     if(request.method==="GET"&&u.pathname==="/v1/device") {
@@ -107,7 +178,7 @@ export default {
         }
         return json({status:"CLOUD_REGISTERED_UNVERIFIED",device_id:b.device_id,
           owner_verified:false,auto_patch:false,remote_control:false,
-          dashboard_url:new URL("/",request.url).toString()});
+          dashboard_url:new URL("/dashboard",request.url).toString()});
       } catch(ex) {
         if(ex instanceof SyntaxError)return err("Invalid JSON",400);
         if(ex instanceof Error&&/Payload too large/.test(ex.message))return err(ex.message,413);
