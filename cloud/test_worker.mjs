@@ -11,6 +11,7 @@ class D1 {
   prepare(sql) {
     const db = this;
     return {
+      async first() { return this.bind().first(); },
       bind(...values) {
         return {
           async first() {
@@ -63,7 +64,7 @@ const request = (path, method='GET', payload, extra={}) => {
   return new Request(base+path,{method,headers,body});
 };
 const call = (db,path,method='GET',payload,extra={}) =>
-  worker.fetch(request(path,method,payload,extra),{DB:db,TEST_MODE:true});
+  worker.fetch(request(path,method,payload,extra),{DB:db});
 
 test('cloud health and public docs do not expose admin access', async () => {
   const db=new D1();
