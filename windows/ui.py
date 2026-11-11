@@ -107,7 +107,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:1.5rem}u
 </section>
 <div class="card" id="scan"><h2><span class="spin"></span>Scanning</h2><ul class="steps" id="steps"></ul><div id="live" class="fix"></div><p class="fix">The update check can take a minute or two. This page updates by itself.</p></div>
 <div id="out" hidden></div>
-<footer><div id="ver"></div>The security scan reads only. Enrolment saves a read-only local approval file. No patches or restarts. {{PATCHER}} remains the OS updater.</footer>
+<footer><div id="ver"></div>The security scan reads only. Enrolment only saves a local read-only approval file. No patches or restarts. {{PATCHER}} does the patching.</footer>
 </main><script>
 const $=id=>document.getElementById(id);
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
