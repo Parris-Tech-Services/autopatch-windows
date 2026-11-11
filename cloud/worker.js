@@ -112,7 +112,6 @@ export default {
         if(ex instanceof SyntaxError)return err("Invalid JSON",400);
         if(ex instanceof Error&&/Payload too large/.test(ex.message))return err(ex.message,413);
         if(ex instanceof Error&&/JSON required|Invalid request/.test(ex.message))return err(ex.message,422);
-        if(env.TEST_MODE===true)return err("TEST_DIAGNOSTIC: "+(ex instanceof Error?ex.message:String(ex)),503);
         return err("Could not enrol this device",503);
       }
     }
