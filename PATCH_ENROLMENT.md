@@ -9,6 +9,22 @@ evidence*; the phone's enrolment only grants `inventory_read`.
 administrator's explicit authorisation.** Your work ThinkPad must stay out of
 AutoPatch's automatic patching scope even if Windows says it is not domain joined.
 
+## Easiest Windows path — inside the app (v0.4)
+
+On a personal Windows PC, start the downloaded AutoPatch app and open
+**http://127.0.0.1:8765/#enrol** on that PC. Use the **Enrol this PC**
+wizard to download the inventory in one click after ownership confirmation,
+read the phone commands and import your approved-device.json. No PowerShell
+needed on the Windows PC for this read-only onboarding.
+
+The phone remains the central authority. The Windows app verifies the receipt
+fields and device identity **but not the cryptographic origin of the receipt**.
+This is a local acknowledgement, not independently authenticated fleet status
+or permission to patch. Its approval import cannot enable unattended updates.
+
+The lower-level manual workflow below remains available for Linux or advanced
+troubleshooting.
+
 ## A. One-time read-only enrolment (private)
 
 1. On the trusted phone where the private `JoshDashboard4/security/autopatch-ai`

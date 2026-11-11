@@ -51,7 +51,7 @@ try:
     st = wait_state(8765, 600)
     if st.get("error"):
         raise SystemExit("SCAN ERROR: " + st["error"])
-    assert "0.3" in st["version"], st["version"]
+    assert "0.4" in st["version"], st["version"]
     view = st["view"]
     checks = {c["title"]: c["state"] for c in view["checks"]}
     print("version:", st["version"], "| admin:", st["admin"], "| score:", view["score"], "| warnings:", st["warnings"])
@@ -59,7 +59,7 @@ try:
         print("  %-8s %s" % (state, title))
     assert len(checks) >= 11, "expected at least 11 checks, got %d" % len(checks)
     status, page = get(8765, "/")
-    assert status == 200 and b"AutoPatch" in page
+    assert status == 200 and b"AutoPatch" in page\n    assert b"id=\"enrol\"" in page and b"Download enrolment file" in page, "enrolment wizard missing from bundled exe"\n    status, enrol = get(8765, "/api/enrol")\n    assert status == 200 and json.loads(enrol).get("patching_enabled") is False\n    assert json.loads(enrol).get("status") == "NOT_ENROLLED", "CI runner unexpectedly enrolled"
     status, body = get(8765, "/status.json")
     assert json.loads(body).get("schema_version") == 1
     print("SMOKE OK: exe starts, scans, serves the page and the shared status document")
