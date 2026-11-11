@@ -41,6 +41,8 @@ class CloudUnitTests(unittest.TestCase):
         method,path,payload,_,_=self.calls[0]
         self.assertEqual((method,path),("POST","/v1/enrol"))
         self.assertEqual(payload["hostname"],HOST)
+        self.assertNotEqual(payload["device_id"],ID)
+        self.assertTrue(payload["device_id"].startswith("windows-"))
         self.assertEqual(set(payload),{"device_id","hostname","device_class","credential"})
         self.assertGreaterEqual(len(payload["credential"]),40)
         self.assertNotIn("credential",str(result))
@@ -66,7 +68,7 @@ class CloudUnitTests(unittest.TestCase):
         def intermittent(method,path,*,payload=None,device_id=None,credential=None):
             supplied.append(payload["credential"])
             if len(supplied)==1:raise cloud_enrol.CloudError("Offline")
-            return {"status":"CLOUD_REGISTERED_UNVERIFIED","device_id":ID,
+            return {"status":"CLOUD_REGISTERED_UNVERIFIED","device_id":payload["device_id"],
                     "owner_verified":False,"auto_patch":False,"remote_control":False}
         c=cloud_enrol.CloudEnrolment(ID,hostname=HOST,store=self.record,transport=intermittent)
         with self.assertRaises(cloud_enrol.CloudError):
@@ -74,6 +76,7 @@ class CloudUnitTests(unittest.TestCase):
         self.assertEqual(c.state()["status"],"CLOUD_ENROLMENT_PENDING")
         self.assertEqual(c.enrol({"confirmed_personal":True})["status"],"CLOUD_REGISTERED_UNVERIFIED")
         self.assertEqual(supplied[0],supplied[1])
+        self.assertEqual(c.state()["cloud_device_id"],json.loads(self.record.read_text())["device_id"])
 
     def test_forged_cloud_success_not_trusted(self):
         def forged(*args,**kwargs):
