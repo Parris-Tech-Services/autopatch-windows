@@ -86,7 +86,7 @@ class Scan:
                 "device": {"id": self.device_id, "class": "linux", "label": str(raw["hostname"])[:40]},
                 "collected_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "os": {"name": str(raw["os_name"]), "patch_level": str(raw["kernel"])},
-                "updates": {"pending_security": n if isinstance(n, int) else None, "reboot_required": bool(raw.get("reboot_required"))},
+                "updates": {"pending_security": n if isinstance(n, int) else None, "reboot_required": raw.get("reboot_required") if isinstance(raw.get("reboot_required"), bool) else None},
                 "checks": checks, "findings": [], "gate": {"decision": gate["decision"], "reasons": gate["reasons"]},
                 "agent_version": "linux-" + BASE_VERSION,
             }

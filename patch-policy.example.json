@@ -1,0 +1,26 @@
+{
+  "device_id": "replace-with-enrolled-personal-device-id",
+  "device_class": "linux",
+  "hostname": "replace-with-exact-local-hostname",
+  "ownership": "unconfirmed",
+  "employer_managed": true,
+  "patching_enabled": false,
+  "auto_restart": false,
+  "reboot_approved": false,
+  "packages": {},
+  "window": {
+    "timezone": "Australia/Sydney",
+    "weekdays": [
+      5
+    ],
+    "start": "20:00",
+    "end": "21:00"
+  },
+  "backup": {
+    "verified": false,
+    "restore_tested": false,
+    "evidence_file": "/private/verified-backup-receipt.json",
+    "verified_utc": null,
+    "rollback_plan": ""
+  }
+}
