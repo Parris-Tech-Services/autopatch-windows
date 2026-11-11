@@ -1,5 +1,26 @@
 # Discovery-to-deployment verification
 
+## Artifact identity collection
+
+`artifact_verification.py` compares a complete first-party file-hash inventory
+with collected deployed-file hashes and an expected inventory digest from a
+separately trusted build record. It rejects changed, missing, extra and ambiguous
+paths, malformed hashes and mismatched build inventories. JSON reads retain the
+existing size and duplicate-field limits.
+
+```sh
+python artifact_verification.py --expected expected-files.json \
+  --observed observed-files.json --expected-digest <trusted-build-inventory-sha256>
+```
+
+Maps contain canonical relative paths and SHA-256 digests. Include HTML and all
+first-party executable scripts, styles and assets; do not fingerprint only a
+release marker. A detached inventory cannot include its own hash. External
+scripts, mutable backends, runtime configuration and collector authenticity need
+separate evidence. This helper performs no network access and grants no signing,
+deployment or update authority. Even a match has `verified_fixed: false`.
+Its output is collector input, not a replacement for authenticated stage receipts.
+
 ## Scope and current status
 
 The existing Windows/Fedora posture UI remains read-only. The new tools are

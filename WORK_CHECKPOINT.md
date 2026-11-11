@@ -52,3 +52,24 @@ and exercise the full failure/rollback path before enabling real deployment.
 See [VERIFICATION_PIPELINE.md](VERIFICATION_PIPELINE.md) for commands, the trust
 contract, and detailed integration requirements. Existing cloud-enrollment work
 is separate; registration is not deployment authority.
+
+## Real public-app canary and artifact comparison
+
+11 November 2026: added the source-only `artifact_verification.py` helper and nine
+offline negative/positive tests. It checks full first-party file inventories
+against a separate expected inventory digest, rejects changed/missing/extra files
+and ambiguous paths, and never declares a vulnerability fixed or allows deployment.
+Full local suite: **125 tests passed**. Existing read-only apps, device status and
+update gates remain unchanged.
+
+Alternative public canary: `Parris-Tech-Services/Midnight-Line`. Real esbuild CORS
+regression fails on 0.21.5 and passes unchanged on 0.25.12. Root-lockfile npm audit
+reports six affected package nodes before and zero findings after; production
+dependency versions and application source are unchanged. Candidate browser
+matrix: 36/36 desktop/emulated-mobile journeys pass. Separate hosted preview
+loads, completes six stations and restarts; JS/CSS hashes match.
+
+This does not establish trusted independent actors, source-vulnerability discovery,
+whole-repository security, production remediation or an unattended deployment loop.
+Hosted artifact identity and rollback evidence must remain distinct from a
+post-deployment vulnerability rescan of an actual running backend.
