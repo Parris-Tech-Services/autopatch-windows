@@ -63,12 +63,12 @@ const request = (path, method='GET', payload, extra={}) => {
   return new Request(base+path,{method,headers,body});
 };
 const call = (db,path,method='GET',payload,extra={}) =>
-  worker.fetch(request(path,method,payload,extra),{DB:db});
+  worker.fetch(request(path,method,payload,extra),{DB:db,TEST_MODE:true});
 
 test('cloud health and public docs do not expose admin access', async () => {
   const db=new D1();
   let r=await call(db,'/healthz');
-  assert.equal(r.status,200);
+  assert.equal(r.status,200,await r.clone().text());
   assert.equal((await r.json()).patching_enabled,false);
   r=await call(db,'/v1/devices');
   assert.equal(r.status,403);
@@ -84,7 +84,7 @@ test('cloud health and public docs do not expose admin access', async () => {
 test('registration is read-only; idempotent with same credential, mismatch rejected', async () => {
   const db=new D1();
   let r=await call(db,'/v1/enrol','POST',data);
-  assert.equal(r.status,200);
+  assert.equal(r.status,200,await r.clone().text());
   let first=await r.json();
   assert.equal(first.status,'CLOUD_REGISTERED_UNVERIFIED');
   assert.equal(first.auto_patch,false);
@@ -93,7 +93,7 @@ test('registration is read-only; idempotent with same credential, mismatch rejec
   assert.equal(db.devices.size,1);
   assert.notEqual(db.devices.get(data.device_id).credential_sha256,secret);
   r=await call(db,'/v1/enrol','POST',data);
-  assert.equal(r.status,200);
+  assert.equal(r.status,200,await r.clone().text());
   assert.equal(db.devices.size,1);
   r=await call(db,'/v1/enrol','POST',{...data,credential:'Y'.repeat(48)});
   assert.equal(r.status,409);
