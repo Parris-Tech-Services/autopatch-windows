@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { webcrypto } from 'node:crypto';
+// Workers expose Web Crypto globally; older Node runners may not.
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
 import worker from './worker.js';
 
 // In-memory, zero-network D1 imitation covering the actual SQL used by Worker.
