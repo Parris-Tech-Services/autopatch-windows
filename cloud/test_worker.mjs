@@ -185,11 +185,11 @@ test('verified Access owner sees read-only fleet without credential hashes',asyn
   assert.doesNotMatch(page,/X{48}/);
   r=await call(db,'/v1/admin/devices','GET',undefined,{},context,'owner@example.test');
   assert.equal(r.status,200);
-  const data=await r.json();
-  assert.equal(data.count,1);
-  assert.equal(data.patching_enabled,false);
-  assert.equal(data.devices[0].registration_state,'unverified');
-  assert.equal('credential_sha256' in data.devices[0],false);
+  const inventory=await r.json();
+  assert.equal(inventory.count,1);
+  assert.equal(inventory.patching_enabled,false);
+  assert.equal(inventory.devices[0].registration_state,'unverified');
+  assert.equal('credential_sha256' in inventory.devices[0],false);
 });
 
 test('unsafe hostnames are escaped in private dashboard',async()=>{
