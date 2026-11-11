@@ -71,7 +71,8 @@ class CloudEnrolment:
         except (OSError, ValueError, TypeError):
             return None
         if (not isinstance(record, dict)
-                or record.get("device_id") != self.device_id
+                or record.get("local_device_id") != self.device_id
+                or not DEVICE_ID.fullmatch(str(record.get("device_id","")))
                 or record.get("hostname") != self.hostname
                 or not TOKEN.fullmatch(str(record.get("credential","")))):
             return None
@@ -100,7 +101,8 @@ class CloudEnrolment:
             status = "CLOUD_ENROLMENT_PENDING"
         elif record:
             status = "CLOUD_REGISTERED_UNVERIFIED"
-        return {"device_id": self.device_id, "hostname": self.hostname,
+        return {"device_id": self.device_id, "cloud_device_id": record.get("device_id") if record else None,
+                "hostname": self.hostname,
                 "status": status, "cloud_connected": status == "CLOUD_REGISTERED_UNVERIFIED",
                 "owner_verified": False, "patching_enabled": False, "remote_control": False,
                 "dashboard_url": CLOUD_BASE + "/",
@@ -116,19 +118,20 @@ class CloudEnrolment:
         if record and record["state"] == "cloud_registered_unverified":
             # Still require live proof. Never claim a stale local file means
             # the cloud is reachable or the device is still registered.
-            check = self.transport("GET","/v1/device",device_id=self.device_id,
+            check = self.transport("GET","/v1/device",device_id=record["device_id"],
                                    credential=record["credential"])
             if check.get("status") != "CLOUD_REGISTERED_UNVERIFIED" or check.get("auto_patch") is not False:
                 raise CloudError("Cloud enrolment is no longer active")
             return self.state()
         if not record:
-            record={"device_id":self.device_id, "hostname":self.hostname,
+            record={"local_device_id":self.device_id, "device_id":"windows-"+secrets.token_hex(16),
+                    "hostname":self.hostname,
                     "credential":secrets.token_urlsafe(32), "state":"pending"}
             self._save(record)
         response=self.transport("POST","/v1/enrol",payload={
-            "device_id":self.device_id,"hostname":self.hostname,
+            "device_id":record["device_id"],"hostname":self.hostname,
             "device_class":"windows","credential":record["credential"]})
-        if (response.get("device_id") != self.device_id or
+        if (response.get("device_id") != record["device_id"] or
                 response.get("status") != "CLOUD_REGISTERED_UNVERIFIED" or
                 response.get("owner_verified") is not False or
                 response.get("auto_patch") is not False or
