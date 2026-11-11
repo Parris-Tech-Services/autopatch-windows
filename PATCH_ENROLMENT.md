@@ -1,134 +1,49 @@
-# Enrol personal devices for AutoPatch (Windows / Fedora)
+# Enrol a personal Windows PC — one click
 
-**Deploy status:** no device is automatically enrolled by installing or running the
-AutoPatch app. Your live scanner remains read-only. The separate `safe_patch.py`
-script is *disabled unless explicitly opted in with your own policy and backup
-evidence*; the phone's enrolment only grants `inventory_read`.
+**Install:** [AutoPatch for Windows](https://github.com/Parris-Tech-Services/autopatch-windows/releases/latest/download/autopatch-windows.exe)
 
-**Never enrol a work, employer, school, client or shared machine without its
-administrator's explicit authorisation.** Your work ThinkPad must stay out of
-AutoPatch's automatic patching scope even if Windows says it is not domain joined.
+1. Open AutoPatch on a **personally owned Windows computer**.
+2. Click **Enrol this PC** in the app.
+3. Look for **Cloud registered · Owner not verified**.
 
-## Easiest Windows path — inside the app (v0.4)
+That's it. The app sends a minimal device identity over HTTPS to
+[AutoPatch Cloud](https://autopatch-cloud-enrolment.parris-neathaustralia.workers.dev/).
+No phone, terminal commands, invitation tokens or JSON files.
 
-On a personal Windows PC, start the downloaded AutoPatch app and open
-**http://127.0.0.1:8765/#enrol** on that PC. Use the **Enrol this PC**
-wizard to download the inventory in one click after ownership confirmation,
-read the phone commands and import your approved-device.json. No PowerShell
-needed on the Windows PC for this read-only onboarding.
+## What this enables
 
-The phone remains the central authority. The Windows app verifies the receipt
-fields and device identity **but not the cryptographic origin of the receipt**.
-This is a local acknowledgement, not independently authenticated fleet status
-or permission to patch. Its approval import cannot enable unattended updates.
+Cloud-side read-only device registration, with a private randomly generated
+credential saved in your Windows profile. The service stores a SHA-256 digest of
+that credential and the device ID, hostname, class and registration timestamps.
 
-The lower-level manual workflow below remains available for Linux or advanced
-troubleshooting.
+This is **not yet a verified owner fleet enrolment**. There is no private fleet
+dashboard sign-in yet, no unattended monitoring service and no automatic
+patching. The service does not expose a public device list or any endpoint
+that performs patches, commands, remote control, BIOS changes or restarts.
 
-## A. One-time read-only enrolment (private)
+**Don't enrol an employer, school or customer device without written
+authorisation from its administrator.** A domain-free work PC is still a
+work-managed device. If you click on a work device by mistake, its read-only
+cloud registration does not grant patch privileges, but contact the owner
+about removing the registration.
 
-1. On the trusted phone where the private `JoshDashboard4/security/autopatch-ai`
-   code and authority live, run:
-   
-   ```sh
-   python3 devices/enroll.py init
-   python3 devices/enroll.py invite --device-id home-fedora-01 --device-class linux --owner joshualparris
-   ```
-   
-   For a *personal* Windows device, choose `--device-id home-windows-01`
-   and `--device-class windows`. **Never share the one-time invitation token
-   in chat, logs, or Git.**
-2. On the **personal device you physically control**, use the existing
-   `devices/agent-linux.sh` or `devices/agent-windows.ps1` agent from the
-   private repository (the public AutoPatch project also bundles the Windows
-   agent). It runs locally and writes a JSON inventory. Example on Fedora:
-   
-   ```sh
-   AUTOPATCH_DEVICE_ID=home-fedora-01 sh devices/agent-linux.sh ./inventory.json
-   ```
-   
-   Example on personal Windows, from a trusted local checkout:
-   
-   ```powershell
-   .\devices\agent-windows.ps1 -DeviceId home-windows-01 -OutFile .\inventory.json
-   ```
-3. Copy *only that inventory file* privately to the trusted phone and approve
-   with its local invitation token:
-   
-   ```sh
-   python3 devices/enroll.py approve --token '<one-time-token>' --inventory ./inventory.json
-   python3 devices/enroll.py export --device-id home-fedora-01 --out ./approved-device.json
-   ```
-   
-   Export is minimal: device ID/class, hostname, approval metadata and
-   read-only permission. **It is not a cryptographic patch authorisation.**
-   Transfer it back to that same personal device privately. Never distribute
-   the phone's HMAC key or complete multi-device registry.
-4. Start the normal local status app with **the exact enrolled device ID**
-   (otherwise it will generate a different ID and ingestion will block).
-   On Fedora, from a source checkout:
-   
-   ```sh
-   python3 linux/autopatch_linux.py --device-id home-fedora-01
-   ```
-   
-   On personal Windows from a PowerShell terminal where the released exe lives:
-   
-   ```powershell
-   .\autopatch-windows.exe --device-id home-windows-01
-   ```
-   
-   While it runs, save **on that same device** its local status file:
-   
-   ```sh
-   curl -fsS http://127.0.0.1:8765/status.json > ./status.json
-   ```
-   
-   PowerShell:
-   
-   ```powershell
-   Invoke-WebRequest http://127.0.0.1:8765/status.json -OutFile .\status.json
-   ```
-   
-   The status must have the same device ID and hostname and be under an hour
-   old for the patch runner. Upload it privately to the trusted phone if you
-   want fleet ingestion:
-   
-   ```sh
-   python3 fleet_ingest.py --registry ~/.local/share/autopatch-ai/devices.json --status ./status.json --out ~/.local/share/autopatch-ai/fleet
-   ```
-   
-   This checks read-only inventory. It does not enable updates.
+## If enrolment fails
 
-## B. Future local package patching (separate explicit opt-in)
+Check your internet connection and press the button again. Failed or
+interrupted requests are safe to retry: the device reuses its same local random
+credential. The app will never claim a confirmed registration unless the
+cloud responds with the restricted read-only result.
 
-The public repo provides `patch-policy.example.json`, intended to be copied
-**outside Git** onto the personal device. Update device ID, hostname, OS, target
-package/version, maintenance window, rollback plan and private backup evidence.
-Defaults are `patching_enabled: false` and `backup.verified: false`: a fresh
-file can never patch. A tested recoverable backup must really exist.
+Cloud availability is checked at
+[the health endpoint](https://autopatch-cloud-enrolment.parris-neathaustralia.workers.dev/healthz).
 
-The standalone local patch executor is NOT bundled in the read-only
-`autopatch-windows.exe`; run it from an authorised checkout with Python 3.11+:
+## What's next
 
-```sh
-python3 safe_patch.py --policy /private/policy.json --approved-inventory /private/approved-device.json --status /private/status.json --package PACKAGE_ID --out /private/dry-run.json
-```
+Cloudflare Access owner sign-in is currently **not enabled on this Cloudflare
+account**. It must be configured before a private shared device dashboard can
+show approved fleet devices or issue patch policies.
 
-Dry-run is default. `--apply` is the separate local opt-in to invoke
-`dnf upgrade --security -y ... PACKAGE` on Fedora or
-`winget upgrade --id PACKAGE --exact --silent ...` on Windows, **only if every
-gate passes**. There is no scheduled patch timer or automatic restart, and
-no attempt to elevate privileges. Do not schedule `--apply` until an owned
-disposable OS test plus rollback has been proven for your chosen package.
-
-A successful upgrade is only
-`PACKAGE_VERSION_VERIFIED_CVE_NOT_VERIFIED`. It proves the installed package
-version changed to the explicitly approved target; it does **not** prove a
-specific Windows/Fedora CVE is resolved. OS/vendor/CVE verification remains a
-separate task, and OS updates or drivers/firmware are excluded from this runner.
-A failed postcheck returns `BLOCKED_UNVERIFIED_REVIEW_ROLLBACK` and requires
-manual recovery (there is no automatic OS rollback).
-
-This project is not an MDM or unattended fleet patch manager. No hidden
-remote shell, LAN crawling, email, self-approval or automatic enrolment.
+OS updates, winget, Fedora dnf and vendor CVE verification must still
+pass explicit safety gates and tests. The separate `safe_patch.py` tool
+remains deny-by-default, local-only and opt-in; it is not scheduled and is not
+part of the one-click enrolment operation.
