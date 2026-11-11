@@ -160,7 +160,8 @@ def apply(policy, status, package, *, approved_inventory=None, apply_change=Fals
         return {"status": "READY_DRY_RUN", "package": package,
                 "from_version": before, "to_version": allow["to_version"], "changed": False}
     if system == "windows":
-        command = ["winget", "upgrade", "--id", package, "--exact", "--silent",
+        command = ["winget", "upgrade", "--id", package, "--exact",
+                   "--version", allow["to_version"], "--silent",
                    "--disable-interactivity", "--accept-package-agreements",
                    "--accept-source-agreements"]
     else:
