@@ -111,7 +111,7 @@ class CloudServerTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         store=Path(self.tmp.name)/"test-cloud.json"
         def transport(method,path,*,payload=None,device_id=None,credential=None):
-            return {"status":"CLOUD_REGISTERED_UNVERIFIED","device_id":ID,
+            return {"status":"CLOUD_REGISTERED_UNVERIFIED","device_id":payload["device_id"],
                     "owner_verified":False,"auto_patch":False,"remote_control":False}
         cloud=cloud_enrol.CloudEnrolment(ID,hostname=HOST,store=store,transport=transport)
         class Scan:
