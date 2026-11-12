@@ -8,6 +8,12 @@ Double-click it. SmartScreen will warn about an unknown publisher (the exe is un
 
 Some checks need administrator rights and show "could not be read" otherwise. Unknown is never counted as a pass.
 
+## Discovery-to-deployment verification tools
+
+The source checkout also includes an [offline verification pipeline](VERIFICATION_PIPELINE.md): cached npm/OSV discovery, authenticated fail-closed evidence assessment, and a disposable local repair/canary demonstration. Run `python repair_demo.py --out _work/verification-demo-01` to exercise the fixture without network access, credentials, package installation or live-device changes.
+
+These are separate developer tools, not new capabilities in the downloaded UI app. A successful fixture reports `FIXTURE_VERIFIED`, not a real CVE fix. Production collectors, independently provisioned trust, an approved deployment adapter and actual runtime evidence are still required; the existing app, enrollment and OS-update boundaries remain unchanged.
+
 ## One-click cloud enrolment (Windows v0.5)
 
 1. [Download AutoPatch Windows](https://github.com/Parris-Tech-Services/autopatch-windows/releases/latest/download/autopatch-windows.exe) and open it on **a personal PC you own and are authorised to manage**.
