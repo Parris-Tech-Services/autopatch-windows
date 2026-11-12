@@ -16,7 +16,8 @@ class D1 {
         if (sql.includes('FROM device_registrations ORDER BY created_utc DESC LIMIT 200')) {
           return { results: Array.from(db.devices.values()).map(d=>({
             device_id:d.device_id,hostname:d.hostname,device_class:'windows',
-            registration_state:d.registration_state,created_utc:d.created_utc,last_seen_utc:d.last_seen_utc
+            registration_state:d.registration_state,owner_attested:d.owner_attested||0,
+            owner_attested_utc:d.owner_attested_utc||null,created_utc:d.created_utc,last_seen_utc:d.last_seen_utc
           })).slice(0,200) };
         }
         throw Error('Unhandled all query: '+sql);
@@ -28,7 +29,7 @@ class D1 {
               const found = db.devices.get(values[0]);
               if (!found || found.credential_sha256 !== values[1]) return null;
               return {device_id: found.device_id, hostname: found.hostname,
-                registration_state: found.registration_state,
+                registration_state: found.registration_state,owner_attested:found.owner_attested||0,
                 created_utc: found.created_utc, last_seen_utc: found.last_seen_utc};
             }
             if (sql.includes('SELECT credential_sha256,hostname,registration_state')) {
@@ -50,11 +51,17 @@ class D1 {
             }
             if (sql.startsWith('INSERT INTO device_registrations')) {
               db.devices.set(values[0],{device_id:values[0],hostname:values[1],
-                registration_state:'unverified',credential_sha256:values[3],
+                registration_state:'unverified',owner_attested:0,credential_sha256:values[3],
                 created_utc:'2026-11-11',last_seen_utc:'2026-11-11'});
               return {};
             }
             if (sql.startsWith('UPDATE device_registrations SET last_seen_utc='))return {};
+            if (sql.startsWith('UPDATE device_registrations SET owner_attested=')) {
+              const d=db.devices.get(values[0]);
+              if(!d||d.registration_state!=='unverified')return {meta:{changes:0}};
+              d.owner_attested=1;d.owner_attested_utc='2026-11-13';
+              return {meta:{changes:1}};
+            }
             throw Error('Unhandled update: ' + sql);
           }
         };
