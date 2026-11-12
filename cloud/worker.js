@@ -3,7 +3,7 @@
  * authorisation, automatic patching, unattended execution or remote access.
  * Device credentials are random and hashed server-side. No global device list.
  */
-const VERSION = "2026-11-11-cloud-v2";
+const VERSION = "2026-11-13-cloud-v3";
 const ID = /^[a-z0-9][a-z0-9-]{2,63}$/;
 const HOST = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const TOKEN = /^[A-Za-z0-9_-]{40,100}$/;
@@ -39,7 +39,7 @@ p{color:#aec0d8}a{color:#91b8ff}small{color:#91a6c3}
 const htmlHeaders = {
   "Content-Type":"text/html; charset=utf-8",
   "Cache-Control":"no-store, private",
-  "Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+  "Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
   "X-Content-Type-Options":"nosniff",
   "Referrer-Policy":"no-referrer"
 };
@@ -47,10 +47,10 @@ const esc = value => String(value??"").replace(/[&<>"']/g, ch=>({
   "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
 })[ch]);
 const dashboardPage = (rows, identity) => {
-  const active=rows.filter(x=>x.registration_state==="unverified").length;
+  const active=rows.filter(x=>x.registration_state==="unverified" && x.owner_attested!==1).length;
   const markup=rows.map(d=>`<tr><td><strong>${esc(d.hostname)}</strong><span class="muted">${esc(d.device_id)}</span></td>
-<td>${esc(d.device_class)}</td><td>${d.registration_state==="revoked"?"Revoked":"Registered · unverified"}</td>
-<td>${esc(d.last_seen_utc||"Unknown")} UTC</td></tr>`).join("");
+<td>${esc(d.device_class)}</td><td>${d.registration_state==="revoked"?"Revoked":d.owner_attested===1?"Owner-confirmed personal · read only":"Registered · awaiting owner confirmation"}</td>
+<td>${esc(d.last_seen_utc||"Unknown")} UTC</td><td>${d.registration_state==="unverified" && d.owner_attested!==1?`<form action="/dashboard/confirm-personal" method="post"><input type="hidden" name="device_id" value="${esc(d.device_id)}"><label><input required type="checkbox" name="confirmed_personal" value="yes">I own this personal PC (not work/client)</label><button type="submit">Confirm</button></form>`:"None"}</td></tr>`).join("");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AutoPatch Cloud — Devices</title><style>
 :root{color-scheme:dark}*{box-sizing:border-box}
@@ -75,11 +75,11 @@ small{color:#aabdd5} .notice{border-left:3px solid #d7b96b;padding-left:14px}
 <div class="card metric"><small>Unverified devices</small><span class="big">${active}</span></div>
 <div class="card metric"><small>Automatic patching</small><span class="big">Off</span></div></section>
 <section class="card"><h2>Your registered devices</h2>
-${rows.length?`<div class="scroll"><table><thead><tr><th>Computer</th><th>Type</th><th>Trust state</th><th>Last contact</th></tr></thead><tbody>${markup}</tbody></table></div>`:
+${rows.length?`<div class="scroll"><table><thead><tr><th>Computer</th><th>Type</th><th>Trust state</th><th>Last contact</th><th>Owner action</th></tr></thead><tbody>${markup}</tbody></table></div>`:
 `<p>No computers registered yet. Install AutoPatch for Windows and select <strong>Enrol this PC</strong>.</p>`}
-<p class="notice">Registrations are not yet verified as yours. A registered device cannot receive patches or remote commands. Do not treat this as a verified security posture report.</p></section>
+<p class="notice">Only you can confirm a device is personally owned. Owner confirmation is still NOT permission for patches, remote commands or restarts. Do not treat this as a verified security posture report.</p></section>
 <p><a href="https://github.com/Parris-Tech-Services/autopatch-windows/releases/latest">Download the Windows app</a> · <a href="/healthz">Service health</a></p>
-<small>Read-only preview · No unattended patching · No public device listing</small></main></body></html>`;
+<small>Owner confirmation only · No unattended patching · No public device listing</small></main></body></html>`;
 };
 async function adminIdentity(env, ctx) {
   // Access policy protects the URL before it reaches this Worker. Defense in
@@ -110,7 +110,7 @@ async function auth(request, env) {
   const token=authorization.startsWith("Bearer ")?authorization.slice(7):"";
   if(!ID.test(id)||!TOKEN.test(token))return null;
   const digest=await sha256(token);
-  const row=await env.DB.prepare("SELECT device_id, hostname, registration_state, created_utc, last_seen_utc FROM device_registrations WHERE device_id=? AND credential_sha256=?").bind(id,digest).first();
+  const row=await env.DB.prepare("SELECT device_id, hostname, registration_state, owner_attested, created_utc, last_seen_utc FROM device_registrations WHERE device_id=? AND credential_sha256=?").bind(id,digest).first();
   return row||null;
 }
 export default {
@@ -126,7 +126,7 @@ export default {
       if(!identity)return err("Cloudflare Access owner authentication required",403);
       try {
         const result=await env.DB.prepare(
-          "SELECT device_id,hostname,device_class,registration_state,created_utc,last_seen_utc FROM device_registrations ORDER BY created_utc DESC LIMIT 200"
+          "SELECT device_id,hostname,device_class,registration_state,owner_attested,owner_attested_utc,created_utc,last_seen_utc FROM device_registrations ORDER BY created_utc DESC LIMIT 200"
         ).all();
         const rows=result.results||[];
         if(u.pathname==="/v1/admin/devices")return json({devices:rows,count:rows.length,owner_verified_for_dashboard:true,patching_enabled:false});
@@ -140,7 +140,7 @@ export default {
       if(!row)return err("Device not registered or credential invalid",401);
       return json({device_id:row.device_id,hostname:row.hostname,
         status:row.registration_state==="revoked"?"REVOKED":"CLOUD_REGISTERED_UNVERIFIED",
-        cloud_connected:row.registration_state!=="revoked",owner_verified:false,
+        cloud_connected:row.registration_state!=="revoked",owner_verified:false,owner_attested_personal:row.owner_attested===1,
         auto_patch:false,remote_control:false,created_utc:row.created_utc,last_seen_utc:row.last_seen_utc});
     }
     if(request.method==="POST"&&u.pathname==="/v1/heartbeat") {
