@@ -227,7 +227,7 @@ test('owner confirmation requires Access identity, consent, same origin and regi
   const db=new D1();
   await call(db,'/v1/enrol','POST',data);
   const fields={device_id:data.device_id,confirmed_personal:'yes'};
-  let response=await confirm(db,form(fields),undefined);
+  let response=await confirm(db,form(fields),null);
   assert.equal(response.status,403);
   response=await confirm(db,form(fields),ownerContext,'other@example.test');
   assert.equal(response.status,403);
