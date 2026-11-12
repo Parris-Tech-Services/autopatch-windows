@@ -1,4 +1,5 @@
--- Read-only, unverified device registry. Owner/fleet credentials are NOT here.
+-- Read-only registry with optional owner personal-device attestation.
+-- Attestation is NOT patch or remote-control authority; owner credentials are NOT stored.
 -- D1 database: autopatch-enrolment
 CREATE TABLE IF NOT EXISTS device_registrations (
   device_id TEXT PRIMARY KEY CHECK(length(device_id) BETWEEN 3 AND 64),
@@ -9,6 +10,8 @@ CREATE TABLE IF NOT EXISTS device_registrations (
     CHECK(registration_state IN ('unverified', 'revoked')),
   created_utc TEXT NOT NULL DEFAULT (datetime('now')),
   last_seen_utc TEXT NOT NULL DEFAULT (datetime('now')),
+  owner_attested INTEGER NOT NULL DEFAULT 0 CHECK(owner_attested IN (0, 1)),
+  owner_attested_utc TEXT,
   auto_patch INTEGER NOT NULL DEFAULT 0 CHECK(auto_patch = 0),
   remote_control INTEGER NOT NULL DEFAULT 0 CHECK(remote_control = 0)
 );

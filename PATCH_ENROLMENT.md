@@ -10,6 +10,14 @@ That's it. The app sends a minimal device identity over HTTPS to
 [AutoPatch Cloud](https://autopatch-cloud-enrolment.parris-neathaustralia.workers.dev/).
 No phone, terminal commands, invitation tokens or JSON files.
 
+## Confirming a personally owned device in the private dashboard
+
+The authenticated Cloudflare Access owner dashboard now offers an **explicit personal-device confirmation** for an existing registration. Visit [AutoPatch Cloud dashboard](https://autopatch-cloud-enrolment.parris-neathaustralia.workers.dev/dashboard), sign in with the authorised owner account, review the device ID/hostname, tick **I own this personal PC (not work/client)** and press **Confirm**. You can leave a registration unconfirmed or revoke it through the existing administrative procedure.
+
+This records **owner attestation**, not a cryptographic proof of physical ownership. It cannot enable app/OS patching, elevated commands, remote access or reboots. The single-package local `safe_patch.py` still separately requires a verified system-level restore test, owner policy, maintenance window, exact allowed version and post-install version checks. A successful file-copy restore drill is *not* a valid whole-computer restore test.
+
+Existing Cloudflare D1 databases need the additive one-time migration `cloud/migrations/2026-11-13-owner-attestation.sql` before this Worker revision is deployed. For new databases the columns are already in `cloud/schema.sql`. Do not auto-confirm existing registrations during migration.
+
 ## What this enables
 
 Cloud-side read-only device registration, with a private randomly generated

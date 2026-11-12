@@ -16,7 +16,8 @@ class D1 {
         if (sql.includes('FROM device_registrations ORDER BY created_utc DESC LIMIT 200')) {
           return { results: Array.from(db.devices.values()).map(d=>({
             device_id:d.device_id,hostname:d.hostname,device_class:'windows',
-            registration_state:d.registration_state,created_utc:d.created_utc,last_seen_utc:d.last_seen_utc
+            registration_state:d.registration_state,owner_attested:d.owner_attested||0,
+            owner_attested_utc:d.owner_attested_utc||null,created_utc:d.created_utc,last_seen_utc:d.last_seen_utc
           })).slice(0,200) };
         }
         throw Error('Unhandled all query: '+sql);
@@ -28,7 +29,7 @@ class D1 {
               const found = db.devices.get(values[0]);
               if (!found || found.credential_sha256 !== values[1]) return null;
               return {device_id: found.device_id, hostname: found.hostname,
-                registration_state: found.registration_state,
+                registration_state: found.registration_state,owner_attested:found.owner_attested||0,
                 created_utc: found.created_utc, last_seen_utc: found.last_seen_utc};
             }
             if (sql.includes('SELECT credential_sha256,hostname,registration_state')) {
@@ -50,11 +51,17 @@ class D1 {
             }
             if (sql.startsWith('INSERT INTO device_registrations')) {
               db.devices.set(values[0],{device_id:values[0],hostname:values[1],
-                registration_state:'unverified',credential_sha256:values[3],
+                registration_state:'unverified',owner_attested:0,credential_sha256:values[3],
                 created_utc:'2026-11-11',last_seen_utc:'2026-11-11'});
               return {};
             }
             if (sql.startsWith('UPDATE device_registrations SET last_seen_utc='))return {};
+            if (sql.startsWith('UPDATE device_registrations SET owner_attested=')) {
+              const d=db.devices.get(values[0]);
+              if(!d||d.registration_state!=='unverified')return {meta:{changes:0}};
+              d.owner_attested=1;d.owner_attested_utc='2026-11-13';
+              return {meta:{changes:1}};
+            }
             throw Error('Unhandled update: ' + sql);
           }
         };
@@ -204,4 +211,70 @@ test('unsafe hostnames are escaped in private dashboard',async()=>{
   assert.match(html,/&lt;script&gt;/);
   assert.doesNotMatch(html,/<script>alert/);
   assert.doesNotMatch(html,/stored-secret/);
+});
+
+
+const ownerContext = {access:{getIdentity:async()=>({email:'owner@example.test'})}};
+const form = (fields, origin=base, site='same-origin') =>
+  new Request(base+'/dashboard/confirm-personal', {method:'POST',
+    headers:{'Origin':origin,'Sec-Fetch-Site':site,
+             'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams(fields).toString()});
+const confirm = (db, request, ctx=ownerContext, email='owner@example.test') =>
+  worker.fetch(request,{DB:db,OWNER_EMAIL:email},ctx);
+
+test('owner confirmation requires Access identity, consent, same origin and registered device',async()=>{
+  const db=new D1();
+  await call(db,'/v1/enrol','POST',data);
+  const fields={device_id:data.device_id,confirmed_personal:'yes'};
+  let response=await confirm(db,form(fields),null);
+  assert.equal(response.status,403);
+  response=await confirm(db,form(fields),ownerContext,'other@example.test');
+  assert.equal(response.status,403);
+  response=await confirm(db,form(fields,'https://evil.test'));
+  assert.equal(response.status,403);
+  response=await confirm(db,form(fields,base,'cross-site'));
+  assert.equal(response.status,403);
+  response=await confirm(db,form({...fields,confirmed_personal:'no'}));
+  assert.equal(response.status,422);
+  response=await confirm(db,form({...fields,device_id:'windows-unregistered'}));
+  assert.equal(response.status,404);
+  assert.equal(db.devices.get(data.device_id).owner_attested,0);
+});
+
+test('owner confirmation records personal consent, still never authorises patches',async()=>{
+  const db=new D1();
+  await call(db,'/v1/enrol','POST',data);
+  const response=await confirm(db,form({device_id:data.device_id,confirmed_personal:'yes'}));
+  assert.equal(response.status,303);
+  assert.equal(response.headers.get('Location'),'/dashboard');
+  assert.equal(db.devices.get(data.device_id).owner_attested,1);
+  assert.equal(db.devices.get(data.device_id).registration_state,'unverified');
+  const dash=await call(db,'/dashboard','GET',undefined,{},ownerContext,'owner@example.test');
+  assert.equal(dash.status,200);
+  const html=await dash.text();
+  assert.match(html,/Owner-confirmed personal/);
+  assert.doesNotMatch(html,/credential_sha256/);
+  const headers={'X-AutoPatch-Device-ID':data.device_id,Authorization:'Bearer '+secret};
+  const st=await call(db,'/v1/device','GET',undefined,headers);
+  assert.equal(st.status,200);
+  const doc=await st.json();
+  assert.equal(doc.owner_attested_personal,true);
+  assert.equal(doc.owner_verified,false);
+  assert.equal(doc.auto_patch,false);
+  assert.equal(doc.remote_control,false);
+  const admin=await call(db,'/v1/admin/devices','GET',undefined,{},ownerContext,'owner@example.test');
+  const listing=await admin.json();
+  assert.equal(listing.patching_enabled,false);
+  assert.equal(listing.devices[0].owner_attested,1);
+});
+
+test('owner confirmation is not accessible by GET or arbitrary privileged payload',async()=>{
+  const db=new D1();
+  await call(db,'/v1/enrol','POST',data);
+  let r=await call(db,'/dashboard/confirm-personal','GET',undefined,{},ownerContext,'owner@example.test');
+  assert.notEqual(r.status,200);
+  r=await confirm(db,form({device_id:data.device_id,confirmed_personal:'yes',auto_patch:'true'}));
+  assert.equal(r.status,422);
+  assert.equal(db.devices.get(data.device_id).owner_attested,0);
 });
