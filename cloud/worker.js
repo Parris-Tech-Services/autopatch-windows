@@ -121,6 +121,29 @@ export default {
       return new Response(html,{headers:{"Content-Type":"text/html; charset=utf-8",
         "Cache-Control":"no-store", "Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         "X-Content-Type-Options":"nosniff", "Referrer-Policy":"no-referrer"}});
+    if(request.method==="POST"&&u.pathname==="/dashboard/confirm-personal") {
+      const identity=await adminIdentity(env,ctx);
+      if(!identity)return err("Cloudflare Access owner authentication required",403);
+      // Same-origin browser form only. No JSON/remote device approval endpoints.
+      if(request.headers.get("Origin")!==u.origin || request.headers.get("Sec-Fetch-Site")!=="same-origin")
+        return err("Same-origin owner confirmation required",403);
+      if((request.headers.get("Content-Type")||"").split(";")[0].toLowerCase()!=="application/x-www-form-urlencoded")
+        return err("Form encoding required",415);
+      const text=await request.text();
+      if(text.length>1024)return err("Form too large",413);
+      const form=new URLSearchParams(text);
+      if([...form.keys()].sort().join(",")!=="confirmed_personal,device_id" ||
+         form.getAll("confirmed_personal").length!==1 || form.get("confirmed_personal")!=="yes" ||
+         !ID.test(form.get("device_id")||""))
+        return err("Explicit personal ownership confirmation required",422);
+      try {
+        const result=await env.DB.prepare(
+          "UPDATE device_registrations SET owner_attested=1,owner_attested_utc=datetime('now') WHERE device_id=? AND registration_state='unverified'"
+        ).bind(form.get("device_id")).run();
+        if(result?.meta?.changes!==1)return err("Device not registered or revoked",404);
+      }catch(_){return err("Owner confirmation could not be recorded",503)}
+      return new Response(null,{status:303,headers:{"Location":"/dashboard","Cache-Control":"no-store"}});
+    }
     if(request.method==="GET"&&(u.pathname==="/dashboard"||u.pathname==="/v1/admin/devices")){
       const identity=await adminIdentity(env,ctx);
       if(!identity)return err("Cloudflare Access owner authentication required",403);
