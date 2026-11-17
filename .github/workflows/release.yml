@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Tools
         run: dnf -y install python3 git findutils util-linux procps-ng
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
       - name: Build the single-file app
@@ -30,7 +30,7 @@ jobs:
     needs: fedora
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       - name: Tests
